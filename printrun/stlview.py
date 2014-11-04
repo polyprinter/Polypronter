@@ -85,7 +85,7 @@ class StlViewPanel(wxGLPanel):
         if build_dimensions:
             self.build_dimensions = build_dimensions
         else:
-            self.build_dimensions = [200, 200, 100, 0, 0, 0]
+            self.build_dimensions = [229, 229, 229, 0, 0, 0]
         self.platform = actors.Platform(self.build_dimensions,
                                         circular = circular)
         self.dist = max(self.build_dimensions[0], self.build_dimensions[1])

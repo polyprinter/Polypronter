@@ -34,7 +34,6 @@ class GvizBaseFrame(wx.Frame):
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
         panel = wx.Panel(hpanel, -1)
-        vbox = wx.BoxSizer(wx.VERTICAL)
 
         vbox = wx.BoxSizer(wx.VERTICAL)
         self.toolbar = wx.ToolBar(panel, -1, style = wx.TB_HORIZONTAL | wx.NO_BORDER | wx.TB_HORZ_TEXT)
@@ -69,7 +68,7 @@ class GvizBaseFrame(wx.Frame):
 ID_ABOUT = 101
 ID_EXIT = 110
 class GvizWindow(GvizBaseFrame):
-    def __init__(self, f = None, size = (600, 600), build_dimensions = [200, 200, 100, 0, 0, 0], grid = (10, 50), extrusion_width = 0.5, bgcolor = "#000000"):
+    def __init__(self, f = None, size = (600, 600), build_dimensions = [229, 229, 229, 0, 0, 0], grid = (10, 50), extrusion_width = 0.5, bgcolor = "#000000"):
         super(GvizWindow, self).__init__(None, title = _("Gcode view, shift to move view, mousewheel to set layer"), size = size)
 
         panel, vbox = self.create_base_ui()
@@ -171,7 +170,7 @@ class Gviz(wx.Panel):
             self._showall = showall
     showall = property(_get_showall, _set_showall)
 
-    def __init__(self, parent, size = (200, 200), build_dimensions = [200, 200, 100, 0, 0, 0], grid = (10, 50), extrusion_width = 0.5, bgcolor = "#000000", realparent = None):
+    def __init__(self, parent, size = (200, 200), build_dimensions = [229, 229, 229, 0, 0, 0], grid = (10, 50), extrusion_width = 0.5, bgcolor = "#000000", realparent = None):
         wx.Panel.__init__(self, parent, -1)
         self.widget = self
         size = [max(1.0, x) for x in size]

@@ -190,7 +190,7 @@ def parse_build_dimensions(bdim):
     # "XXX,YYY,ZZZ+xxx+yyy-zzz"
     # etc
     bdl = re.findall("([-+]?[0-9]*\.?[0-9]*)", bdim)
-    defaults = [200, 200, 100, 0, 0, 0, 0, 0, 0]
+    defaults = [229, 229, 229, 0, 0, 0, 0, 0, 0]
     bdl = filter(None, bdl)
     bdl_float = [float(value) if value else defaults[i] for i, value in enumerate(bdl)]
     if len(bdl_float) < len(defaults):

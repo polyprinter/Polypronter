@@ -59,14 +59,15 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
         "btemp_off": (base_line + 1, 2),
         "btemp_val": (base_line + 1, 3),
         "btemp_set": (base_line + 1, 4),
+        "flush": (e_base_line + 0, 2),
         "ebuttons": (e_base_line + 0, 0),
         "esettings": (e_base_line + 1, 0),
         "speedcontrol": (e_base_line + 2, 0),
-        "htemp_gauge": (gauges_base_line + 0, 0),
-        "btemp_gauge": (gauges_base_line + 1, 0),
+        "htemp_gauge": (gauges_base_line + 0 if root.display_graph or root.display_printspeed else e_base_line + 2, 0),
+        "btemp_gauge": (gauges_base_line + 1 if root.display_graph or root.display_printspeed else e_base_line + 3, 0),
         "tempdisp": (tempdisp_line, 0),
-        "extrude": (3, 0),
-        "reverse": (3, 2),
+        "extrude": (e_base_line + 0, 0),
+        "reverse": (e_base_line + 0, 3),
     }
 
     span_mapping = {
@@ -78,13 +79,14 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
         "btemp_off": (1, 1),
         "btemp_val": (1, 1),
         "btemp_set": (1, 1 if root.display_graph else 2),
+        "flush":(1, 3),
         "ebuttons": (1, 5 if root.display_graph else 6),
         "esettings": (1, 5 if root.display_graph else 6),
         "speedcontrol": (1, 5 if root.display_graph else 6),
         "htemp_gauge": (1, 5 if mini_mode else 6),
         "btemp_gauge": (1, 5 if mini_mode else 6),
         "tempdisp": (1, 5 if mini_mode else 6),
-        "extrude": (1, 2),
+        "extrude": (1, 3),
         "reverse": (1, 3),
     }
 
@@ -131,8 +133,8 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
 
     root.settoff = make_button(parentpanel, _("Off"), lambda e: root.do_settemp("off"), _("Switch Hotend Off"), size = (38, -1), style = wx.BU_EXACTFIT)
     root.printerControls.append(root.settoff)
-    add("htemp_off", root.settoff)
-
+    add("htemp_off", root.settoff)    
+    
     if root.settings.last_temperature not in map(float, root.temps.values()):
         htemp_choices = [str(root.settings.last_temperature)] + htemp_choices
     root.htemp = wx.ComboBox(parentpanel, -1, choices = htemp_choices,
@@ -185,38 +187,39 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
         root.htemp.SetValue(root.htemp.Value + ' (user)')
 
     # Speed control #
-    speedpanel = root.newPanel(parentpanel)
-    speedsizer = wx.BoxSizer(wx.HORIZONTAL)
-    speedsizer.Add(wx.StaticText(speedpanel, -1, _("Print speed:")), flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
+    if root.display_printspeed:
+        speedpanel = root.newPanel(parentpanel)
+        speedsizer = wx.BoxSizer(wx.HORIZONTAL)
+        speedsizer.Add(wx.StaticText(speedpanel, -1, _(" Print speed:")), flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
 
-    root.speed_slider = wx.Slider(speedpanel, -1, 100, 1, 300)
-    speedsizer.Add(root.speed_slider, 1, flag = wx.EXPAND)
+        root.speed_slider = wx.Slider(speedpanel, -1, 100, 1, 300)
+        speedsizer.Add(root.speed_slider, 1, flag = wx.EXPAND)
 
-    root.speed_spin = FloatSpin(speedpanel, -1, value = 100, min_val = 1, max_val = 300, digits = 0, style = wx.ALIGN_LEFT, size = (60, -1))
-    speedsizer.Add(root.speed_spin, 0, flag = wx.ALIGN_CENTER_VERTICAL)
-    root.speed_label = wx.StaticText(speedpanel, -1, _("%"))
-    speedsizer.Add(root.speed_label, flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
+        root.speed_spin = FloatSpin(speedpanel, -1, value = 100, min_val = 1, max_val = 300, increment = 5, digits = 0, style = wx.ALIGN_LEFT, size = (60, -1))
+        speedsizer.Add(root.speed_spin, 0, flag = wx.ALIGN_CENTER_VERTICAL)
+        root.speed_label = wx.StaticText(speedpanel, -1, _("% "))
+        speedsizer.Add(root.speed_label, flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
 
-    def speedslider_set(event):
-        root.do_setspeed()
-        root.speed_setbtn.SetBackgroundColour(wx.NullColour)
-    root.speed_setbtn = make_button(speedpanel, _("Set"), speedslider_set, _("Set print speed factor"), size = (38, -1), style = wx.BU_EXACTFIT)
-    root.printerControls.append(root.speed_setbtn)
-    speedsizer.Add(root.speed_setbtn, flag = wx.ALIGN_CENTER)
-    speedpanel.SetSizer(speedsizer)
-    add("speedcontrol", speedpanel, flag = wx.EXPAND)
+        def speedslider_set(event):
+            root.do_setspeed()
+            root.speed_setbtn.SetBackgroundColour(wx.NullColour)
+        root.speed_setbtn = make_button(speedpanel, _("Set"), speedslider_set, _("Set print speed factor"), size = (38, -1), style = wx.BU_EXACTFIT)
+        root.printerControls.append(root.speed_setbtn)
+        speedsizer.Add(root.speed_setbtn, flag = wx.ALIGN_CENTER)
+        speedpanel.SetSizer(speedsizer)
+        add("speedcontrol", speedpanel, flag = wx.EXPAND)
 
-    def speedslider_spin(event):
-        value = root.speed_spin.GetValue()
-        root.speed_setbtn.SetBackgroundColour("red")
-        root.speed_slider.SetValue(value)
-    root.speed_spin.Bind(wx.EVT_SPINCTRL, speedslider_spin)
+        def speedslider_spin(event):
+            value = root.speed_spin.GetValue()
+            root.speed_setbtn.SetBackgroundColour("red")
+            root.speed_slider.SetValue(value)
+        root.speed_spin.Bind(wx.EVT_SPINCTRL, speedslider_spin)
 
-    def speedslider_scroll(event):
-        value = root.speed_slider.GetValue()
-        root.speed_setbtn.SetBackgroundColour("red")
-        root.speed_spin.SetValue(value)
-    root.speed_slider.Bind(wx.EVT_SCROLL, speedslider_scroll)
+        def speedslider_scroll(event):
+            value = root.speed_slider.GetValue()
+            root.speed_setbtn.SetBackgroundColour("red")
+            root.speed_spin.SetValue(value)
+        root.speed_slider.Bind(wx.EVT_SCROLL, speedslider_scroll)
 
     # Temperature gauges #
 
@@ -267,36 +270,38 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
 
     # Extrusion settings
     esettingspanel = root.newPanel(parentpanel)
-    esettingssizer = wx.GridBagSizer()
+    esettingssizer = wx.GridBagSizer(hgap = 5, vgap = 2)
     esettingssizer.SetEmptyCellSize((0, 0))
     root.edist = FloatSpin(esettingspanel, -1, value = root.settings.last_extrusion, min_val = 0, max_val = 1000, size = (70, -1), digits = 1)
     root.edist.SetBackgroundColour((225, 200, 200))
     root.edist.SetForegroundColour("black")
     root.edist.Bind(wx.EVT_SPINCTRL, root.setfeeds)
     root.edist.Bind(wx.EVT_TEXT, root.setfeeds)
-    add("edist_label", wx.StaticText(esettingspanel, -1, _("Length:")), container = esettingssizer, flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT | wx.RIGHT | wx.LEFT, border = 5)
-    add("edist_val", root.edist, container = esettingssizer, flag = wx.ALIGN_CENTER | wx.RIGHT, border = 5)
+    add("edist_label", wx.StaticText(esettingspanel, -1, _("Length:")), container = esettingssizer, flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT | wx.RIGHT | wx.LEFT, border = 0)
+    add("edist_val", root.edist, container = esettingssizer, flag = wx.ALIGN_CENTER | wx.RIGHT)
     unit_label = _("mm") if mini_mode else _("mm @")
-    add("edist_unit", wx.StaticText(esettingspanel, -1, unit_label), container = esettingssizer, flag = wx.ALIGN_CENTER | wx.RIGHT, border = 5)
+    add("edist_unit", wx.StaticText(esettingspanel, -1, unit_label), container = esettingssizer, flag = wx.ALIGN_CENTER | wx.RIGHT)
     root.edist.SetToolTip(wx.ToolTip(_("Amount to Extrude or Retract (mm)")))
     if not mini_mode:
-        root.efeedc = FloatSpin(esettingspanel, -1, value = root.settings.e_feedrate, min_val = 0, max_val = 50000, size = (70, -1), digits = 1)
+        root.efeedc = FloatSpin(esettingspanel, -1, value = root.settings.e_feedrate, min_val = 0, max_val = 50000, increment = 25, size = (70, -1), digits = 1)
         root.efeedc.SetToolTip(wx.ToolTip(_("Extrude / Retract speed (mm/min)")))
         root.efeedc.SetBackgroundColour((225, 200, 200))
         root.efeedc.SetForegroundColour("black")
         root.efeedc.Bind(wx.EVT_SPINCTRL, root.setfeeds)
         root.efeedc.Bind(wx.EVT_TEXT, root.setfeeds)
-        add("efeed_val", root.efeedc, container = esettingssizer, flag = wx.ALIGN_CENTER | wx.RIGHT, border = 5)
-        add("efeed_label", wx.StaticText(esettingspanel, -1, _("Speed:")), container = esettingssizer, flag = wx.ALIGN_LEFT)
-        add("efeed_unit", wx.StaticText(esettingspanel, -1, _("mm/\nmin")), container = esettingssizer, flag = wx.ALIGN_CENTER)
+        add("efeed_val", root.efeedc, container = esettingssizer, flag = wx.ALIGN_CENTER | wx.RIGHT)
+        add("efeed_label", wx.StaticText(esettingspanel, -1, _("Speed:")), container = esettingssizer, flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT | wx.RIGHT | wx.LEFT, border = 0)
+        add("efeed_unit", wx.StaticText(esettingspanel, -1, _("mm/min")), container = esettingssizer, flag = wx.ALIGN_CENTER)
     else:
         root.efeedc = None
     esettingspanel.SetSizer(esettingssizer)
-    add("esettings", esettingspanel, flag = wx.ALIGN_LEFT)
+    add("esettings", esettingspanel, flag = wx.ALIGN_CENTER)
 
     if not standalone_mode:
         ebuttonspanel = root.newPanel(parentpanel)
         ebuttonssizer = wx.BoxSizer(wx.HORIZONTAL)
+        ebuttons_v_sizer = wx.BoxSizer(wx.VERTICAL)
+        ebuttonssizer.Add(ebuttons_v_sizer, 1, flag = wx.EXPAND)
         if root.settings.extruders > 1:
             etool_sel_panel = esettingspanel if mini_mode else ebuttonspanel
             etool_label = wx.StaticText(etool_sel_panel, -1, _("Tool:"))
@@ -330,14 +335,18 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
                 ebuttonssizer.Add(etool_label, flag = wx.ALIGN_CENTER)
                 ebuttonssizer.Add(root.extrudersel)
 
-        for key in ["extrude", "reverse"]:
+        for key in ["extrude", "reverse", "flush"]:
             desc = root.cpbuttons[key]
             btn = make_custom_button(root, ebuttonspanel, desc,
                                      style = wx.BU_EXACTFIT)
-            ebuttonssizer.Add(btn, 1, flag = wx.EXPAND)
+            if key == "flush":
+                ebuttonssizer.Add(btn, 1, flag = wx.EXPAND)
+            else:
+                ebuttons_v_sizer.Add(btn, 1, flag = wx.EXPAND)
 
         ebuttonspanel.SetSizer(ebuttonssizer)
         add("ebuttons", ebuttonspanel, flag = wx.EXPAND)
+        
     else:
         for key, btn in extra_buttons.items():
             add(key, btn, flag = wx.EXPAND)
@@ -351,6 +360,8 @@ class ControlsSizer(wx.GridBagSizer):
         else: self.make_standard(root, parentpanel, standalone_mode)
 
     def make_standard(self, root, parentpanel, standalone_mode):
+        self.SetHGap(4)
+        self.SetVGap(4)
         lltspanel = root.newPanel(parentpanel)
         llts = wx.BoxSizer(wx.HORIZONTAL)
         lltspanel.SetSizer(llts)
@@ -362,13 +373,15 @@ class ControlsSizer(wx.GridBagSizer):
 
         self.extra_buttons = {}
         pos_mapping = {"extrude": (4, 0),
-                       "reverse": (4, 2),
+                       "flush": (4, 2),
+                       "reverse": (4, 4),
                        }
         span_mapping = {"extrude": (1, 2),
+                        "flush": (1, 3),
                         "reverse": (1, 3),
                         }
         for key, desc in root.cpbuttons.items():
-            if not standalone_mode and key in ["extrude", "reverse"]:
+            if not standalone_mode and key in ["extrude", "flush", "reverse"]:
                 continue
             panel = lltspanel if key == "motorsoff" else parentpanel
             btn = make_custom_button(root, panel, desc)
@@ -381,9 +394,9 @@ class ControlsSizer(wx.GridBagSizer):
 
         root.xyfeedc = wx.SpinCtrl(lltspanel, -1, str(root.settings.xy_feedrate), min = 0, max = 50000, size = (70, -1))
         root.xyfeedc.SetToolTip(wx.ToolTip(_("Set Maximum Speed for X & Y axes (mm/min)")))
-        llts.Add(wx.StaticText(lltspanel, -1, _("XY:")), flag = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
+        llts.Add(wx.StaticText(lltspanel, -1, _(" XY:")), flag = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         llts.Add(root.xyfeedc)
-        llts.Add(wx.StaticText(lltspanel, -1, _("mm/min Z:")), flag = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
+        llts.Add(wx.StaticText(lltspanel, -1, _(" mm/min Z:")), flag = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         root.zfeedc = wx.SpinCtrl(lltspanel, -1, str(root.settings.z_feedrate), min = 0, max = 50000, size = (70, -1))
         root.zfeedc.SetToolTip(wx.ToolTip(_("Set Maximum Speed for Z axis (mm/min)")))
         llts.Add(root.zfeedc,)

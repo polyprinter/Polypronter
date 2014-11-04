@@ -14,8 +14,9 @@
 # along with Printrun.  If not, see <http://www.gnu.org/licenses/>.
 
 import wx
-
+from .utils import make_button
 from .utils import make_autosize_button
+from printrun.utils import imagefile
 
 def MainToolbar(root, parentpanel = None, use_wrapsizer = False):
     if not parentpanel: parentpanel = root.panel
@@ -28,50 +29,11 @@ def MainToolbar(root, parentpanel = None, use_wrapsizer = False):
         glob.Add(parentpanel, 1, flag = wx.EXPAND)
         glob.Add(root.locker, 0, flag = wx.ALIGN_CENTER)
     ToolbarSizer = wx.WrapSizer if use_wrapsizer and wx.VERSION > (2, 9) else wx.BoxSizer
-    self = ToolbarSizer(wx.HORIZONTAL)
-    root.rescanbtn = make_autosize_button(parentpanel, _("Port"), root.rescanports, _("Communication Settings\nClick to rescan ports"))
-    self.Add(root.rescanbtn, 0, wx.TOP | wx.LEFT, 0)
-
-    root.serialport = wx.ComboBox(parentpanel, -1, choices = root.scanserial(),
-                                  style = wx.CB_DROPDOWN)
-    root.serialport.SetToolTip(wx.ToolTip(_("Select Port Printer is connected to")))
-    root.rescanports()
-    self.Add(root.serialport)
-
-    self.Add(wx.StaticText(parentpanel, -1, "@"), 0, wx.RIGHT | wx.ALIGN_CENTER, 0)
-    root.baud = wx.ComboBox(parentpanel, -1,
-                            choices = ["2400", "9600", "19200", "38400",
-                                       "57600", "115200", "250000"],
-                            style = wx.CB_DROPDOWN, size = (100, -1))
-    root.baud.SetToolTip(wx.ToolTip(_("Select Baud rate for printer communication")))
-    try:
-        root.baud.SetValue("115200")
-        root.baud.SetValue(str(root.settings.baudrate))
-    except:
-        pass
-    self.Add(root.baud)
-
-    if not hasattr(root, "connectbtn"):
-        root.connectbtn = make_autosize_button(parentpanel, _("Connect"), root.connect, _("Connect to the printer"))
-        root.statefulControls.append(root.connectbtn)
-    else:
-        root.connectbtn.Reparent(parentpanel)
-    self.Add(root.connectbtn)
-    if not hasattr(root, "resetbtn"):
-        root.resetbtn = make_autosize_button(parentpanel, _("Reset"), root.reset, _("Reset the printer"))
-        root.statefulControls.append(root.resetbtn)
-    else:
-        root.resetbtn.Reparent(parentpanel)
-    self.Add(root.resetbtn)
-
-    self.AddStretchSpacer(prop = 1)
-
-    root.loadbtn = make_autosize_button(parentpanel, _("Load file"), root.loadfile, _("Load a 3D model file"), self)
-    root.sdbtn = make_autosize_button(parentpanel, _("SD"), root.sdmenu, _("SD Card Printing"), self)
-    root.sdbtn.Reparent(parentpanel)
-    root.printerControls.append(root.sdbtn)
+    self = ToolbarSizer(wx.HORIZONTAL)    
+    
+    root.loadbtn = make_button(parentpanel, _("Load file"), root.loadfile, _("Load a 3D model file"), self, size = (147,48), style = wx.EXPAND)    
     if not hasattr(root, "printbtn"):
-        root.printbtn = make_autosize_button(parentpanel, _("Print"), root.printfile, _("Start Printing Loaded File"))
+        root.printbtn = make_button(parentpanel, _("Print"), root.printfile, _("Start Printing Loaded File"), size = (139,48), style = wx.EXPAND)
         root.statefulControls.append(root.printbtn)
     else:
         root.printbtn.Reparent(parentpanel)
@@ -84,8 +46,56 @@ def MainToolbar(root, parentpanel = None, use_wrapsizer = False):
     self.Add(root.pausebtn)
     root.offbtn = make_autosize_button(parentpanel, _("Off"), root.off, _("Turn printer off"), self)
     root.printerControls.append(root.offbtn)
+    root.sdbtn = make_autosize_button(parentpanel, _("SD"), root.sdmenu, _("SD Card Printing"), self)
+    root.sdbtn.Reparent(parentpanel)
+    root.printerControls.append(root.sdbtn)
+    
+    self.AddStretchSpacer(prop = 1)
+    
+    root.picture = wx.StaticBitmap(parentpanel, size = (150,48))
+    poly_logo = wx.Image(imagefile("Logo.png"), wx.BITMAP_TYPE_PNG).ConvertToBitmap()
+    root.picture.SetBitmap(poly_logo)
+    self.Add(root.picture)
 
-    self.AddStretchSpacer(prop = 4)
+
+    self.AddStretchSpacer(prop = 1)
+
+    if not hasattr(root, "connectbtn"):
+        root.connectbtn = make_autosize_button(parentpanel, _("Connect"), root.connect, _("Connect to the printer"))
+        root.statefulControls.append(root.connectbtn)
+    else:
+        root.connectbtn.Reparent(parentpanel)
+    self.Add(root.connectbtn)
+    
+    if not hasattr(root, "resetbtn"):
+        root.resetbtn = make_autosize_button(parentpanel, _("Reset"), root.reset, _("Reset the printer"))
+        root.statefulControls.append(root.resetbtn)
+    else:
+        root.resetbtn.Reparent(parentpanel)
+    self.Add(root.resetbtn)    
+    
+    root.rescanbtn = make_autosize_button(parentpanel, _("Port"), root.rescanports, _("Communication Settings\nClick to rescan ports"))
+    self.Add(root.rescanbtn, 0, wx.TOP | wx.LEFT, 0)
+
+    root.serialport = wx.ComboBox(parentpanel, -1, choices = root.scanserial(),
+                                  style = wx.CB_DROPDOWN)
+    root.serialport.SetToolTip(wx.ToolTip(_("Select Port Printer is connected to")))
+    root.rescanports()
+    self.Add(root.serialport)
+    
+    self.Add(wx.StaticText(parentpanel, -1, " @ "), 0, wx.RIGHT | wx.ALIGN_TOP, 0)
+    
+    root.baud = wx.ComboBox(parentpanel, -1,
+                            choices = ["2400", "9600", "19200", "38400",
+                                       "57600", "115200", "250000"],
+                            style = wx.CB_DROPDOWN, size = (100, -1))
+    root.baud.SetToolTip(wx.ToolTip(_("Select Baud rate for printer communication")))
+    try:
+        root.baud.SetValue("115200")
+        root.baud.SetValue(str(root.settings.baudrate))
+    except:
+        pass
+    self.Add(root.baud)
 
     if root.settings.lockbox:
         parentpanel.SetSizer(self)

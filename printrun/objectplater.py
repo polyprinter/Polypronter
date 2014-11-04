@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Printrun.  If not, see <http://www.gnu.org/licenses/>.
 
-from .utils import install_locale, iconfile
+from .utils import install_locale, imagefile
 install_locale('plater')
 
 import logging
@@ -89,7 +89,7 @@ class PlaterPanel(wx.Panel):
         if build_dimensions:
             self.build_dimensions = build_dimensions
         else:
-            self.build_dimensions = [200, 200, 100, 0, 0, 0]
+            self.build_dimensions = [229, 229, 229, 0, 0, 0]
 
     def set_viewer(self, viewer):
         # Patch handle_rotation on the fly
@@ -292,7 +292,7 @@ class Plater(wx.Frame):
         if "size" in kwargs:
             del kwargs["size"]
         wx.Frame.__init__(self, parent, title = _("Plate building tool"), size = size)
-        self.SetIcon(wx.Icon(iconfile("plater.png"), wx.BITMAP_TYPE_PNG))
+        self.SetIcon(wx.Icon(imagefile("plater.ico"), wx.BITMAP_TYPE_ICO))
         self.prepare_ui(**kwargs)
 
 def make_plater(panel_class):

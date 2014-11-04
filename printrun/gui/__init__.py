@@ -119,7 +119,7 @@ class MainWindow(wx.Frame):
         self.panel = wx.Panel(self, -1)
         self.reset_ui()
         self.statefulControls = []
-
+    
     def reset_ui(self):
         self.panels = []
         self.printerControls = []
@@ -152,6 +152,7 @@ class MainWindow(wx.Frame):
         leftsizer.Add(controls_sizer, 1, wx.ALIGN_CENTER)
         rightsizer = wx.BoxSizer(wx.VERTICAL)
         extracontrols = wx.GridBagSizer()
+        #add_extra_controls has an error
         add_extra_controls(extracontrols, self, page1panel2, controls_sizer.extra_buttons)
         rightsizer.AddStretchSpacer()
         rightsizer.Add(extracontrols, 0, wx.ALIGN_CENTER)
@@ -213,8 +214,12 @@ class MainWindow(wx.Frame):
         self.panel.SetSizerAndFit(self.notesizer)
 
         self.cbuttons_reload()
-        minsize = self.lowersizer.GetMinSize()  # lower pane
+        minsize = self.lowersizer.GetMinSize()
+        minsize[0] = max(minsize[0], 885)  # lower pane
         minsize[1] = self.notebook.GetSize()[1]
+        displaysize = wx.DisplaySize()
+        minsize[0] = min(minsize[0], displaysize[0])
+        minsize[1] = min(minsize[1], displaysize[1])
         self.SetMinSize(self.ClientToWindowSize(minsize))  # client to window
         self.Fit()
 
@@ -242,8 +247,8 @@ class MainWindow(wx.Frame):
             rightsizer = wx.BoxSizer(wx.VERTICAL)
             rightpanel.SetSizer(rightsizer)
             self.splitterwindow = wx.SplitterWindow(rightpanel, style = wx.SP_3D)
-            self.splitterwindow.SetMinimumPaneSize(150)
-            self.splitterwindow.SetSashGravity(0.8)
+            self.splitterwindow.SetMinimumPaneSize(50)
+            self.splitterwindow.SetSashGravity(0.5)
             rightsizer.Add(self.splitterwindow, 1, wx.EXPAND)
             vizpanel = self.newPanel(self.splitterwindow)
             logpanel = self.newPanel(self.splitterwindow)
@@ -284,13 +289,14 @@ class MainWindow(wx.Frame):
         # the toolbar height and the statusbar/menubar sizes
         minsize = [0, 0]
         minsize[0] = self.lowersizer.GetMinSize()[0]  # lower pane
+        minsize[0] = max(minsize[0], 875)
         minsize[1] = max(viz_pane.GetMinSize()[1], controls_sizer.GetMinSize()[1])
         minsize[1] += self.toolbarsizer.GetMinSize()[1]  # toolbar height
         displaysize = wx.DisplaySize()
         minsize[0] = min(minsize[0], displaysize[0])
         minsize[1] = min(minsize[1], displaysize[1])
         self.SetMinSize(self.ClientToWindowSize(minsize))  # client to window
-
+        
         self.cbuttons_reload()
 
     def gui_set_connected(self):

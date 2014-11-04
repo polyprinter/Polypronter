@@ -84,7 +84,7 @@ class GcodeViewPanel(wxGLPanel):
         if build_dimensions:
             self.build_dimensions = build_dimensions
         else:
-            self.build_dimensions = [200, 200, 100, 0, 0, 0]
+            self.build_dimensions = [229, 229, 229, 0, 0, 0]
         self.dist = max(self.build_dimensions[0], self.build_dimensions[1])
         self.basequat = [0, 0, 0, 1]
         self.mousepos = [0, 0]
@@ -487,7 +487,7 @@ class GcodeViewFrame(GvizBaseFrame, GcodeViewLoader):
 if __name__ == "__main__":
     import sys
     app = wx.App(redirect = False)
-    build_dimensions = [200, 200, 100, 0, 0, 0]
+    build_dimensions = [229, 229, 229, 0, 0, 0]
     title = 'Gcode view, shift to move view, mousewheel to set layer'
     frame = GcodeViewFrame(None, wx.ID_ANY, title, size = (400, 400),
                            build_dimensions = build_dimensions)

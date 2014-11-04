@@ -148,7 +148,7 @@ class pronsole(cmd.Cmd):
         self.processing_rc = False
         self.processing_args = False
         self.settings = Settings(self)
-        self.settings._add(BuildDimensionsSetting("build_dimensions", "200x200x100+0+0+0+0+0+0", _("Build dimensions"), _("Dimensions of Build Platform\n & optional offset of origin\n & optional switch position\n\nExamples:\n   XXXxYYY\n   XXX,YYY,ZZZ\n   XXXxYYYxZZZ+OffX+OffY+OffZ\nXXXxYYYxZZZ+OffX+OffY+OffZ+HomeX+HomeY+HomeZ"), "Printer"), self.update_build_dimensions)
+        self.settings._add(BuildDimensionsSetting("build_dimensions", "229x229x229+0+0+0+0+0+0", _("Build dimensions"), _("Dimensions of Build Platform\n & optional offset of origin\n & optional switch position\n\nExamples:\n   XXXxYYY\n   XXX,YYY,ZZZ\n   XXXxYYYxZZZ+OffX+OffY+OffZ\nXXXxYYYxZZZ+OffX+OffY+OffZ+HomeX+HomeY+HomeZ"), "Printer"), self.update_build_dimensions)
         self.settings._port_list = self.scanserial
         self.settings._temperature_abs_cb = self.set_temp_preset
         self.settings._temperature_pla_cb = self.set_temp_preset

@@ -33,7 +33,7 @@ from . import pronsole
 from . import printcore
 
 from .utils import install_locale, setup_logging, dosify, \
-    iconfile, configfile, format_time, format_duration, \
+    imagefile, configfile, format_time, format_duration, \
     hexcolor_to_float, parse_temperature_report, \
     prepare_command, check_rgb_color, check_rgba_color
 install_locale('pronterface')
@@ -46,10 +46,10 @@ except:
 
 from .gui.widgets import SpecialButton, MacroEditor, PronterOptions, ButtonEdit
 
-winsize = (800, 500)
+winsize = (891, 593)
 layerindex = 0
 if os.name == "nt":
-    winsize = (800, 530)
+    winsize = (891, 623)
 
 pronterface_quitting = False
 
@@ -134,6 +134,15 @@ class PronterWindow(MainWindow, pronsole.pronsole):
     def _get_display_gauges(self):
         return self.settings.tempgauges
     display_gauges = property(_get_display_gauges)
+    
+    def _get_display_printspeed(self):
+        return self.settings.printspeed
+    display_printspeed = property(_get_display_printspeed)
+
+    def _get_mainviz(self):
+        return self.settings.mainviz 
+    display_mainviz = property(_get_mainviz)
+            
 
     def __init__(self, app, filename = None, size = winsize):
         pronsole.pronsole.__init__(self)
@@ -164,6 +173,7 @@ class PronterWindow(MainWindow, pronsole.pronsole):
         self.sentglines = Queue.Queue(0)
         self.cpbuttons = {
             "motorsoff": SpecialButton(_("Motors off"), ("M84"), (250, 250, 250), _("Switch all motors off")),
+            "flush": SpecialButton(_("Flush Extruder"), ("pront_flush"), (200, 200, 225), _("Purify filament color by extruding 150mm")),
             "extrude": SpecialButton(_("Extrude"), ("pront_extrude"), (225, 200, 200), _("Advance extruder by set length")),
             "reverse": SpecialButton(_("Reverse"), ("pront_reverse"), (225, 200, 200), _("Reverse extruder by set length")),
         }
@@ -179,10 +189,10 @@ class PronterWindow(MainWindow, pronsole.pronsole):
         # -- Okai, it seems it breaks things like update_gviz_params ><
         os.putenv("UBUNTU_MENUPROXY", "0")
         size = (self.settings.last_window_width, self.settings.last_window_height)
-        MainWindow.__init__(self, None, title = _("Pronterface"), size = size)
+        MainWindow.__init__(self, None, title = _("PolyPronter"), size = size)
         if self.settings.last_window_maximized:
             self.Maximize()
-        self.SetIcon(wx.Icon(iconfile("pronterface.png"), wx.BITMAP_TYPE_PNG))
+        self.SetIcon(wx.Icon(imagefile("pronterface.ico"), wx.BITMAP_TYPE_ICO))
         self.Bind(wx.EVT_SIZE, self.on_resize)
         self.Bind(wx.EVT_MAXIMIZE, self.on_maximize)
         self.window_ready = True
@@ -374,11 +384,15 @@ class PronterWindow(MainWindow, pronsole.pronsole):
 
     def do_pront_extrude(self, l = ""):
         feed = self.settings.e_feedrate
-        self.do_extrude_final(self.edist.GetValue(), feed)
+        self.do_extrude_final(self.edist.GetValue(), feed)        
 
     def do_pront_reverse(self, l = ""):
         feed = self.settings.e_feedrate
         self.do_extrude_final(- self.edist.GetValue(), feed)
+
+    def do_pront_flush(self, l = ""):
+        feed = self.settings.e_feedrate
+        self.do_extrude_final(150, feed)
 
     def do_settemp(self, l = ""):
         try:
@@ -434,6 +448,7 @@ class PronterWindow(MainWindow, pronsole.pronsole):
                 self.logError(_("Printer is not online."))
         except Exception, x:
             self.logError(_("You must enter a speed. (%s)") % (repr(x),))
+            
 
     def setbedgui(self, f):
         self.bsetpoint = f
@@ -562,7 +577,7 @@ class PronterWindow(MainWindow, pronsole.pronsole):
 
     def tool_change(self, event):
         self.do_tool(self.extrudersel.GetValue())
-
+        
     def show_viz_window(self, event):
         if self.fgcode:
             self.gwindow.Show(True)
@@ -784,7 +799,7 @@ class PronterWindow(MainWindow, pronsole.pronsole):
 
         info = wx.AboutDialogInfo()
 
-        info.SetIcon(wx.Icon(iconfile("pronterface.png"), wx.BITMAP_TYPE_PNG))
+        info.SetIcon(wx.Icon(imagefile("pronterface.ico"), wx.BITMAP_TYPE_ICO))
         info.SetName('Printrun')
         info.SetVersion(printcore.__version__)
 
@@ -828,11 +843,11 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
         self.settings._add(BooleanSetting("circular_bed", False, _("Circular build platform"), _("Draw a circular (or oval) build platform instead of a rectangular one"), "Printer"), self.update_bed_viz)
         self.settings._add(SpinSetting("extruders", 0, 1, 5, _("Extruders count"), _("Number of extruders"), "Printer"))
         self.settings._add(BooleanSetting("clamp_jogging", False, _("Clamp manual moves"), _("Prevent manual moves from leaving the specified build dimensions"), "Printer"))
-        self.settings._add(ComboSetting("uimode", _("Standard"), [_("Standard"), _("Compact"), _("Tabbed"), _("Tabbed with platers")], _("Interface mode"), _("Standard interface is a one-page, three columns layout with controls/visualization/log\nCompact mode is a one-page, two columns layout with controls + log/visualization\nTabbed mode is a two-pages mode, where the first page shows controls and the second one shows visualization and log.\nTabbed with platers mode is the same as Tabbed, but with two extra pages for the STL and G-Code platers."), "UI"), self.reload_ui)
+        self.settings._add(ComboSetting("uimode", _("Standard"), [_("Standard")], _("Interface mode"), _("Standard interface is a one-page, three columns layout with controls/visualization/log"), "UI"), self.reload_ui)
         self.settings._add(ComboSetting("controlsmode", "Standard", ["Standard", "Mini"], _("Controls mode"), _("Standard controls include all controls needed for printer setup and calibration, while Mini controls are limited to the ones needed for daily printing"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("slic3rintegration", False, _("Enable Slic3r integration"), _("Add a menu to select Slic3r profiles directly from Pronterface"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("slic3rupdate", False, _("Update Slic3r default presets"), _("When selecting a profile in Slic3r integration menu, also save it as the default Slic3r preset"), "UI"))
-        self.settings._add(ComboSetting("mainviz", "3D", ["2D", "3D", "None"], _("Main visualization"), _("Select visualization for main window."), "Viewer"), self.reload_ui)
+        self.settings._add(ComboSetting("mainviz", "None", ["2D", "3D", "None"], _("Main visualization"), _("Select visualization for main window."), "Viewer"), self.reload_ui)
         self.settings._add(BooleanSetting("viz3d", False, _("Use 3D in GCode viewer window"), _("Use 3D mode instead of 2D layered mode in the visualization window"), "Viewer"), self.reload_ui)
         self.settings._add(StaticTextSetting("separator_3d_viewer", _("3D viewer options"), "", group = "Viewer"))
         self.settings._add(BooleanSetting("light3d", False, _("Use a lighter 3D visualization"), _("Use a lighter visualization with simple lines instead of extruded paths for 3D viewer"), "Viewer"), self.reload_ui)
@@ -840,22 +855,23 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
         self.settings._add(BooleanSetting("trackcurrentlayer3d", False, _("Track current layer in main 3D view"), _("Track the currently printing layer in the main 3D visualization"), "Viewer"))
         self.settings._add(FloatSpinSetting("gcview_path_width", 0.4, 0.01, 2, _("Extrusion width for 3D viewer"), _("Width of printed path in 3D viewer"), "Viewer", increment = 0.05), self.update_gcview_params)
         self.settings._add(FloatSpinSetting("gcview_path_height", 0.3, 0.01, 2, _("Layer height for 3D viewer"), _("Height of printed path in 3D viewer"), "Viewer", increment = 0.05), self.update_gcview_params)
-        self.settings._add(BooleanSetting("tempgraph", True, _("Display temperature graph"), _("Display time-lapse temperature graph"), "UI"), self.reload_ui)
-        self.settings._add(BooleanSetting("tempgauges", False, _("Display temperature gauges"), _("Display graphical gauges for temperatures visualization"), "UI"), self.reload_ui)
+        self.settings._add(BooleanSetting("tempgraph", False, _("Display temperature graph"), _("Display time-lapse temperature graph"), "UI"), self.reload_ui)
+        self.settings._add(BooleanSetting("tempgauges", True, _("Display temperature gauges"), _("Display graphical gauges for temperatures visualization"), "UI"), self.reload_ui)
+        self.settings._add(BooleanSetting("printspeed", False, _("Display print speed"), _("Display print speed options"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("lockbox", False, _("Display interface lock checkbox"), _("Display a checkbox that, when check, locks most of Pronterface"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("lockonstart", False, _("Lock interface upon print start"), _("If lock checkbox is enabled, lock the interface when starting a print"), "UI"))
         self.settings._add(BooleanSetting("refreshwhenloading", True, _("Update UI during G-Code load"), _("Regularly update visualization during the load of a G-Code file"), "UI"))
         self.settings._add(HiddenSetting("last_window_width", size[0]))
         self.settings._add(HiddenSetting("last_window_height", size[1]))
         self.settings._add(HiddenSetting("last_window_maximized", False))
-        self.settings._add(HiddenSetting("last_sash_position", -1))
+        self.settings._add(HiddenSetting("last_sash_position", 50))
         self.settings._add(HiddenSetting("last_bed_temperature", 0.0))
         self.settings._add(HiddenSetting("last_file_path", u""))
         self.settings._add(HiddenSetting("last_temperature", 0.0))
         self.settings._add(StaticTextSetting("separator_2d_viewer", _("2D viewer options"), "", group = "Viewer"))
         self.settings._add(FloatSpinSetting("preview_extrusion_width", 0.5, 0, 10, _("Preview extrusion width"), _("Width of Extrusion in Preview"), "Viewer", increment = 0.1), self.update_gviz_params)
-        self.settings._add(SpinSetting("preview_grid_step1", 10., 0, 200, _("Fine grid spacing"), _("Fine Grid Spacing"), "Viewer"), self.update_gviz_params)
-        self.settings._add(SpinSetting("preview_grid_step2", 50., 0, 200, _("Coarse grid spacing"), _("Coarse Grid Spacing"), "Viewer"), self.update_gviz_params)
+        self.settings._add(SpinSetting("preview_grid_step1", 10., 0, 229, _("Fine grid spacing"), _("Fine Grid Spacing"), "Viewer"), self.update_gviz_params)
+        self.settings._add(SpinSetting("preview_grid_step2", 50., 0, 229, _("Coarse grid spacing"), _("Coarse Grid Spacing"), "Viewer"), self.update_gviz_params)
         self.settings._add(StringSetting("bgcolor", "#FFFFFF", _("Background color"), _("Pronterface background color"), "Colors"), self.reload_ui, validate = check_rgb_color)
         self.settings._add(StringSetting("gcview_color_background", "#FAFAC7FF", _("3D view background color"), _("Color of the 3D view background"), "Colors"), self.update_gcview_colors, validate = check_rgba_color)
         self.settings._add(StringSetting("gcview_color_travel", "#99999999", _("3D view travel moves color"), _("Color of travel moves in 3D view"), "Colors"), self.update_gcview_colors, validate = check_rgba_color)
@@ -1317,7 +1333,8 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
         dlg = None
         if filename is None:
             dlg = wx.FileDialog(self, _("Open file to print"), basedir, style = wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
-            dlg.SetWildcard(_("OBJ, STL, and GCODE files (*.gcode;*.gco;*.g;*.stl;*.STL;*.obj;*.OBJ)|*.gcode;*.gco;*.g;*.stl;*.STL;*.obj;*.OBJ|All Files (*.*)|*.*"))
+            dlg.SetWildcard(_("GCODE files (*.gcode;*.gco;*.g)|*.gcode;*.gco;*.g|OBJ and STL files (*.stl;*.STL;*.obj;*.OBJ)|*.stl;*.STL;*.obj;*.OBJ|All Files (*.*)|*.*"))
+
         if filename or dlg.ShowModal() == wx.ID_OK:
             if filename:
                 name = filename
@@ -2176,6 +2193,6 @@ class PronterApp(wx.App):
 
     def __init__(self, *args, **kwargs):
         super(PronterApp, self).__init__(*args, **kwargs)
-        self.SetAppName("Pronterface")
+        self.SetAppName("PolyPronter")
         self.mainwindow = PronterWindow(self)
         self.mainwindow.Show()
