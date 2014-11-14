@@ -57,11 +57,10 @@ class PronterfaceQuitException(Exception):
     pass
 
 from .gui import MainWindow
-from .excluder import Excluder
 from .settings import wxSetting, HiddenSetting, StringSetting, SpinSetting, \
     FloatSpinSetting, BooleanSetting, StaticTextSetting
 from printrun import gcoder
-from .pronsole import REPORT_NONE, REPORT_POS, REPORT_TEMP
+from .pronsole import REPORT_NONE, REPORT_POS, REPORT_TEMP, REPORT_MANUAL
 
 class ConsoleOutputHandler(object):
     """Handle console output. All messages go through the logging submodule. We setup a logging handler to get logged messages and write them to both stdout (unless a log file path is specified, in which case we add another logging handler to write to this file) and the log panel.
@@ -775,6 +774,7 @@ class PronterWindow(MainWindow, pronsole.pronsole):
             wx.CallAfter(self.statusbar.SetStatusText, _("No file loaded. Please use load first."))
             return
         if not self.excluder:
+            from .excluder import Excluder
             self.excluder = Excluder()
         self.excluder.pop_window(self.fgcode, bgcolor = self.bgcolor,
                                  build_dimensions = self.build_dimensions_list)
@@ -1135,6 +1135,7 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
         if not self.p.online:
             wx.CallAfter(self.statusbar.SetStatusText, _("Not connected to printer."))
             return
+        self.sdprinting = False
         self.on_startprint()
         self.p.startprint(self.fgcode)
 
@@ -1388,7 +1389,10 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
     def pre_gcode_load(self):
         self.loading_gcode = True
         self.loading_gcode_message = _("Loading %s...") % self.filename
-        gcode = gcoder.GCode(deferred = True)
+        if self.settings.mainviz == "None":
+            gcode = gcoder.LightGCode(deferred = True)
+        else:
+            gcode = gcoder.GCode(deferred = True)
         self.viz_last_yield = 0
         self.viz_last_layer = -1
         self.start_viz_thread(gcode)
@@ -1674,28 +1678,30 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
     def recvcb_actions(self, l):
         if l.startswith("!!"):
             if not self.paused:
-                self.pause()
-            msg = l.split(" ", 1)[1]
-            if not self.p.loud:
-                wx.CallAfter(self.addtexttolog, msg + "\n")
+                wx.CallAfter(self.pause)
+            msg = l.split(" ", 1)
+            if len(msg) > 1 and not self.p.loud:
+                wx.CallAfter(self.addtexttolog, msg[1] + "\n")
             return True
         elif l.startswith("//"):
-            command = l.split(" ", 1)[1]
-            self.log(_("Received command %s") % command)
-            command = command.split(":")
-            if len(command) == 2 and command[0] == "action":
+            command = l.split(" ", 1)
+            if len(command) > 1:
                 command = command[1]
-                if command == "pause":
-                    if not self.paused:
-                        self.pause()
-                    return True
-                elif command == "resume":
-                    if self.paused:
-                        self.do_resume(None)
-                    return True
-                elif command == "disconnect":
-                    self.do_disconnect(None)
-                    return True
+                self.log(_("Received command %s") % command)
+                command = command.split(":")
+                if len(command) == 2 and command[0] == "action":
+                    command = command[1]
+                    if command == "pause":
+                        if not self.paused:
+                            wx.CallAfter(self.pause)
+                        return True
+                    elif command == "resume":
+                        if self.paused:
+                            wx.CallAfter(self.pause)
+                        return True
+                    elif command == "disconnect":
+                        wx.CallAfter(self.disconnect)
+                        return True
         return False
 
     def recvcb(self, l):
@@ -1708,16 +1714,16 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
             elif report_type & REPORT_TEMP:
                 wx.CallAfter(self.tempdisp.SetLabel, self.tempreadings.strip().replace("ok ", ""))
                 self.update_tempdisplay()
-            if not self.p.loud and (l not in ["ok", "wait"] and not isreport):
+            if not self.p.loud and (l not in ["ok", "wait"] and (not isreport or report_type & REPORT_MANUAL)):
                 wx.CallAfter(self.addtexttolog, l + "\n")
         for listener in self.recvlisteners:
             listener(l)
 
     def listfiles(self, line, ignored = False):
         if "Begin file list" in line:
-            self.sdlisting = 1
+            self.sdlisting = True
         elif "End file list" in line:
-            self.sdlisting = 0
+            self.sdlisting = False
             self.recvlisteners.remove(self.listfiles)
             wx.CallAfter(self.filesloaded)
         elif self.sdlisting:
@@ -1732,13 +1738,13 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
             wx.CallAfter(self.statusbar.SetStatusText, l)
         if "File selected" in l:
             wx.CallAfter(self.statusbar.SetStatusText, _("Starting print"))
-            self.sdprinting = 1
+            self.sdprinting = True
             self.p.send_now("M24")
             self.startcb()
             return
         if "Done printing file" in l:
             wx.CallAfter(self.statusbar.SetStatusText, l)
-            self.sdprinting = 0
+            self.sdprinting = False
             self.recvlisteners.remove(self.waitforsdresponse)
             self.endcb()
             return

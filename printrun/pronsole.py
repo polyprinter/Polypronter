@@ -835,7 +835,7 @@ class pronsole(cmd.Cmd):
                 self.disconnect()
                 return
             if do_monitoring:
-                if self.sdprinting:
+                if self.sdprinting and not self.paused:
                     self.p.send_now("M27")
                 if self.m105_waitcycles % 10 == 0:
                     self.p.send_now("M105")
@@ -1024,6 +1024,7 @@ class pronsole(cmd.Cmd):
             return
         self.log(_("Printing %s") % self.filename)
         self.log(_("You can monitor the print with the monitor command."))
+        self.sdprinting = False
         self.p.startprint(self.fgcode)
 
     def do_pause(self, l):
@@ -1095,12 +1096,12 @@ class pronsole(cmd.Cmd):
         if "File selected" in l:
             self.log(_("Starting print"))
             self.p.send_now("M24")
-            self.sdprinting = 1
+            self.sdprinting = True
             # self.recvlisteners.remove(self.waitforsdresponse)
             return
         if "Done printing file" in l:
             self.log(l)
-            self.sdprinting = 0
+            self.sdprinting = False
             self.recvlisteners.remove(self.waitforsdresponse)
             return
         if "SD printing byte" in l:
@@ -1220,26 +1221,34 @@ class pronsole(cmd.Cmd):
     def recvcb_actions(self, l):
         if l.startswith("!!"):
             self.do_pause(None)
-            msg = l.split(" ", 1)[1]
-            if self.silent is False: self.logError(msg.ljust(15))
+            msg = l.split(" ", 1)
+            if len(msg) > 1 and self.silent is False: self.logError(msg[1].ljust(15))
             sys.stdout.write(self.promptf())
             sys.stdout.flush()
             return True
         elif l.startswith("//"):
-            command = l.split(" ", 1)[1]
-            self.log(_("Received command %s") % command)
-            command = command.split(":")
-            if len(command) == 2 and command[0] == "action":
+            command = l.split(" ", 1)
+            if len(command) > 1:
                 command = command[1]
-                if command == "pause":
-                    self.do_pause(None)
-                    return True
-                elif command == "resume":
-                    self.do_resume(None)
-                    return True
-                elif command == "disconnect":
-                    self.do_disconnect(None)
-                    return True
+                self.log(_("Received command %s") % command)
+                command = command.split(":")
+                if len(command) == 2 and command[0] == "action":
+                    command = command[1]
+                    if command == "pause":
+                        self.do_pause(None)
+                        sys.stdout.write(self.promptf())
+                        sys.stdout.flush()
+                        return True
+                    elif command == "resume":
+                        self.do_resume(None)
+                        sys.stdout.write(self.promptf())
+                        sys.stdout.flush()
+                        return True
+                    elif command == "disconnect":
+                        self.do_disconnect(None)
+                        sys.stdout.write(self.promptf())
+                        sys.stdout.flush()
+                        return True
         return False
 
     def recvcb(self, l):
