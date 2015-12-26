@@ -338,6 +338,10 @@ class PronterWindow(MainWindow, pronsole.pronsole):
         self.Close()
 
     def kill(self, e):
+        if self.p.printing or self.p.paused:
+            dlg = wx.MessageDialog(self, _("Print in progress ! Are you really sure you want to quit ?"), _("Exit"), wx.YES_NO | wx.ICON_WARNING)
+            if dlg.ShowModal() == wx.ID_NO:
+                return
         pronsole.pronsole.kill(self)
         global pronterface_quitting
         pronterface_quitting = True
@@ -811,7 +815,7 @@ class PronterWindow(MainWindow, pronsole.pronsole):
                        % self.settings.total_filament_used
 
         info.SetDescription(description)
-        info.SetCopyright('(C) 2011 - 2014')
+        info.SetCopyright('(C) 2011 - 2015')
         info.SetWebSite('https://github.com/kliment/Printrun')
 
         licence = """\
@@ -1066,7 +1070,7 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
             self.paused = 0
             if self.sdprinting:
                 self.p.send_now("M26 S0")
-        if not self.connect_to_printer(port, baud):
+        if not self.connect_to_printer(port, baud, self.settings.dtr):
             return
         if port != self.settings.port:
             self.set("port", port)
@@ -1704,10 +1708,10 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
             command = l.split(" ", 1)
             if len(command) > 1:
                 command = command[1]
-                self.log(_("Received command %s") % command)
                 command = command.split(":")
                 if len(command) == 2 and command[0] == "action":
                     command = command[1]
+                    self.log(_("Received command %s") % command)
                     if command == "pause":
                         if not self.paused:
                             wx.CallAfter(self.pause)
