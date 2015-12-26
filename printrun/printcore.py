@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Printrun.  If not, see <http://www.gnu.org/licenses/>.
 
-__version__ = "2014.08.01"
+__version__ = "2015.03.10"
 
 from serial import Serial, SerialException, PARITY_ODD, PARITY_NONE
 from select import error as SelectError
@@ -62,10 +62,11 @@ def disable_hup(port):
     control_ttyhup(port, True)
 
 class printcore():
-    def __init__(self, port = None, baud = None):
+    def __init__(self, port = None, baud = None, dtr=None):
         """Initializes a printcore instance. Pass the port and baud rate to
            connect immediately"""
         self.baud = None
+        self.dtr = None
         self.port = None
         self.analyzer = gcoder.GCode()
         # Serial instance connected to the printer, should be None when
@@ -144,7 +145,7 @@ class printcore():
         self.printing = False
 
     @locked
-    def connect(self, port = None, baud = None):
+    def connect(self, port = None, baud = None, dtr=None):
         """Set port and baudrate if given, then connect to printer
         """
         if self.printer:
@@ -153,6 +154,8 @@ class printcore():
             self.port = port
         if baud is not None:
             self.baud = baud
+        if dtr is not None:
+            self.dtr = dtr
         if self.port is not None and self.baud is not None:
             # Connect to socket if "port" is an IP, device if not
             host_regexp = re.compile("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$|^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$")
@@ -171,6 +174,7 @@ class printcore():
             if not is_serial:
                 self.printer_tcp = socket.socket(socket.AF_INET,
                                                  socket.SOCK_STREAM)
+                self.printer_tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self.timeout = 0.25
                 self.printer_tcp.settimeout(1.0)
                 try:
@@ -194,6 +198,11 @@ class printcore():
                                           parity = PARITY_ODD)
                     self.printer.close()
                     self.printer.parity = PARITY_NONE
+                    try:  #this appears not to work on many platforms, so we're going to call it but not care if it fails
+                        self.printer.setDTR(dtr);
+                    except:
+                        #self.logError(_("Could not set DTR on this platform")) #not sure whether to output an error message
+                        pass
                     self.printer.open()
                 except SerialException as e:
                     self.logError(_("Could not connect to %s at baudrate %s:") % (self.port, self.baud) +
