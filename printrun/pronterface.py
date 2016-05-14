@@ -138,6 +138,10 @@ class PronterWindow(MainWindow, pronsole.pronsole):
         return self.settings.printspeed
     display_printspeed = property(_get_display_printspeed)
 
+    def _get_display_flowspeed(self):
+        return self.settings.flowspeed
+    display_flowspeed = property(_get_display_flowspeed)
+
     def _get_mainviz(self):
         return self.settings.mainviz 
     display_mainviz = property(_get_mainviz)
@@ -156,8 +160,8 @@ class PronterWindow(MainWindow, pronsole.pronsole):
                 color = hexcolor_to_float(getattr(self.settings, cleanname), 4)
                 setattr(self, cleanname, list(color))
 
-        self.pauseScript = "pause.gcode"
-        self.endScript = "end.gcode"
+        self.pauseScript = None #"pause.gcode"
+        self.endScript = None #"end.gcode"
 
         self.filename = filename
 
@@ -452,6 +456,21 @@ class PronterWindow(MainWindow, pronsole.pronsole):
         except Exception, x:
             self.logError(_("You must enter a speed. (%s)") % (repr(x),))
             
+
+    def do_setflow(self, l = ""):
+        try:
+            if l.__class__ not in (str, unicode) or not len(l):
+                l = str(self.flow_slider.GetValue())
+            else:
+                l = l.lower()
+            flow = int(l)
+            if self.p.online:
+                self.p.send_now("M221 S" + l)
+                self.log(_("Setting print flow factor to %d%%.") % flow)
+            else:
+                self.logError(_("Printer is not online."))
+        except Exception, x:
+            self.logError(_("You must enter a flow. (%s)") % (repr(x),))
 
     def setbedgui(self, f):
         self.bsetpoint = f
@@ -862,6 +881,7 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
         self.settings._add(BooleanSetting("tempgraph", False, _("Display temperature graph"), _("Display time-lapse temperature graph"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("tempgauges", True, _("Display temperature gauges"), _("Display graphical gauges for temperatures visualization"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("printspeed", False, _("Display print speed"), _("Display print speed options"), "UI"), self.reload_ui)
+        self.settings._add(BooleanSetting("flowspeed", False, _("Display flow speed"), _("Display flow speed options"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("lockbox", False, _("Display interface lock checkbox"), _("Display a checkbox that, when check, locks most of Pronterface"), "UI"), self.reload_ui)
         self.settings._add(BooleanSetting("lockonstart", False, _("Lock interface upon print start"), _("If lock checkbox is enabled, lock the interface when starting a print"), "UI"))
         self.settings._add(BooleanSetting("refreshwhenloading", True, _("Update UI during G-Code load"), _("Regularly update visualization during the load of a G-Code file"), "UI"))
@@ -1442,6 +1462,9 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
     def output_gcode_stats(self):
         gcode = self.fgcode
         self.log(_("%.2fmm of filament used in this print") % gcode.filament_length)
+        if(len(gcode.filament_length_multi)>1):
+            for i in enumerate(gcode.filament_length_multi):
+                print "Extruder %d: %0.02fmm" % (i[0],i[1])
         self.log(_("The print goes:"))
         self.log(_("- from %.2f mm to %.2f mm in X and is %.2f mm wide") % (gcode.xmin, gcode.xmax, gcode.width))
         self.log(_("- from %.2f mm to %.2f mm in Y and is %.2f mm deep") % (gcode.ymin, gcode.ymax, gcode.depth))
@@ -1573,6 +1596,14 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
                 temp = gline_s
                 if self.display_gauges: wx.CallAfter(self.bedtgauge.SetTarget, temp)
                 if self.display_graph: wx.CallAfter(self.graph.SetBedTargetTemperature, temp)
+        elif gline.command in ["M106"]:
+            gline_s=gcoder.S(gline)
+            fanpow=255
+            if gline_s is not None:
+                fanpow=gline_s
+            if self.display_graph: wx.CallAfter(self.graph.SetFanPower, fanpow)
+        elif gline.command in ["M107"]:
+            if self.display_graph: wx.CallAfter(self.graph.SetFanPower, 0)
         elif gline.command.startswith("T"):
             tool = gline.command[1:]
             if hasattr(self, "extrudersel"): wx.CallAfter(self.extrudersel.SetValue, tool)
