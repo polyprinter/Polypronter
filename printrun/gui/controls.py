@@ -56,35 +56,37 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
         e_base_line = base_line + 2
 
     pos_mapping = {
-        "htemp_label": (base_line + 0, 0),
-        "htemp_off": (base_line + 0, 2),
-        "htemp_val": (base_line + 0, 3),
-        "htemp_set": (base_line + 0, 4),
-        "btemp_label": (base_line + 1, 0),
-        "btemp_off": (base_line + 1, 2),
-        "btemp_val": (base_line + 1, 3),
-        "btemp_set": (base_line + 1, 4),
-        "flush": (e_base_line + 0, 2),
-        "ebuttons": (e_base_line + 0, 0),
-        "esettings": (e_base_line + 1, 0),
+        "htemp_label": (e_base_line + 0, 0),
+        "htemp_val": (e_base_line + 0, 2),
+        "htemp_set": (e_base_line + 0, 3),
+        "htemp_off": (e_base_line + 0, 4),
+        "btemp_label": (e_base_line + 1, 0),
+        "btemp_val": (e_base_line + 1, 2),
+        "btemp_set": (e_base_line + 1, 3),
+        "btemp_off": (e_base_line + 1, 4),
+        "extrude": (base_line + 0, 0),
+        "reverse": (base_line + 0, 3),
+        "flush": (base_line + 0, 2),
+        "ebuttons": (base_line + 0, 0),
+        "esettings": (base_line + 1, 0),
         "htemp_gauge": (gauges_base_line + 0, 0),
         "btemp_gauge": (gauges_base_line + 1, 0),
         "speedcontrol": (gauges_base_line + 3, 0),
-        "flowcontrol": (gauges_base_line + 4, 0),
+        "flowcontrol": (gauges_base_line + 4 if root.display_printspeed else gauges_base_line + 3, 0),
         "tempdisp": (tempdisp_line, 0),
-        "extrude": (e_base_line + 0, 0),
-        "reverse": (e_base_line + 0, 3),
     }
 
     span_mapping = {
         "htemp_label": (1, 2),
-        "htemp_off": (1, 1),
         "htemp_val": (1, 1),
-        "htemp_set": (1, 1 if root.display_graph else 2),
+        "htemp_set": (1, 1),
+        "htemp_off": (1, 1),
         "btemp_label": (1, 2),
-        "btemp_off": (1, 1),
         "btemp_val": (1, 1),
-        "btemp_set": (1, 1 if root.display_graph else 2),
+        "btemp_set": (1, 1),
+        "btemp_off": (1, 1),
+        "extrude": (1, 3),
+        "reverse": (1, 3),
         "flush":(1, 3),
         "ebuttons": (1, 5 if root.display_graph else 6),
         "esettings": (1, 5 if root.display_graph else 6),
@@ -93,8 +95,6 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
         "htemp_gauge": (1, 5 if mini_mode else 6),
         "btemp_gauge": (1, 5 if mini_mode else 6),
         "tempdisp": (1, 5 if mini_mode else 6),
-        "extrude": (1, 3),
-        "reverse": (1, 3),
     }
 
     if standalone_mode:
@@ -134,13 +134,15 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
 
     # Hotend & bed temperatures #
 
-    # Hotend temp
-    add("htemp_label", wx.StaticText(parentpanel, -1, _("Heat:")), flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
-    htemp_choices = [root.temps[i] + " (" + i + ")" for i in sorted(root.temps.keys(), key = lambda x:root.temps[x])]
+    # Variable for the size of "set" and "off" buttons#
+    if root.display_graph:
+        tempsize = 38
+    else:
+        tempsize = 85
 
-    root.settoff = make_button(parentpanel, _("Off"), lambda e: root.do_settemp("off"), _("Switch Hotend Off"), size = (38, -1), style = wx.BU_EXACTFIT)
-    root.printerControls.append(root.settoff)
-    add("htemp_off", root.settoff)    
+    # Hotend temp
+    add("htemp_label", wx.StaticText(parentpanel, -1, _("Extruder:")), flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
+    htemp_choices = [root.temps[i] + " (" + i + ")" for i in sorted(root.temps.keys(), key = lambda x:root.temps[x])]
     
     if root.settings.last_temperature not in map(float, root.temps.values()):
         htemp_choices = [str(root.settings.last_temperature)] + htemp_choices
@@ -148,19 +150,19 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
                              style = wx.CB_DROPDOWN, size = (80, -1))
     root.htemp.SetToolTip(wx.ToolTip(_("Select Temperature for Hotend")))
     root.htemp.Bind(wx.EVT_COMBOBOX, root.htemp_change)
-
     add("htemp_val", root.htemp)
-    root.settbtn = make_button(parentpanel, _("Set"), root.do_settemp, _("Switch Hotend On"), size = (38, -1), style = wx.BU_EXACTFIT)
+
+    root.settbtn = make_button(parentpanel, _("Set"), root.do_settemp, _("Switch Hotend On"), size = (tempsize, -1), style = wx.BU_EXACTFIT)
     root.printerControls.append(root.settbtn)
     add("htemp_set", root.settbtn, flag = wx.EXPAND)
+
+    root.settoff = make_button(parentpanel, _("Off"), lambda e: root.do_settemp("off"), _("Switch Hotend Off"), size = (tempsize, -1), style = wx.BU_EXACTFIT)
+    root.printerControls.append(root.settoff)
+    add("htemp_off", root.settoff)
 
     # Bed temp
     add("btemp_label", wx.StaticText(parentpanel, -1, _("Bed:")), flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
     btemp_choices = [root.bedtemps[i] + " (" + i + ")" for i in sorted(root.bedtemps.keys(), key = lambda x:root.temps[x])]
-
-    root.setboff = make_button(parentpanel, _("Off"), lambda e: root.do_bedtemp("off"), _("Switch Heated Bed Off"), size = (38, -1), style = wx.BU_EXACTFIT)
-    root.printerControls.append(root.setboff)
-    add("btemp_off", root.setboff)
 
     if root.settings.last_bed_temperature not in map(float, root.bedtemps.values()):
         btemp_choices = [str(root.settings.last_bed_temperature)] + btemp_choices
@@ -170,9 +172,13 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
     root.btemp.Bind(wx.EVT_COMBOBOX, root.btemp_change)
     add("btemp_val", root.btemp)
 
-    root.setbbtn = make_button(parentpanel, _("Set"), root.do_bedtemp, _("Switch Heated Bed On"), size = (38, -1), style = wx.BU_EXACTFIT)
+    root.setbbtn = make_button(parentpanel, _("Set"), root.do_bedtemp, _("Switch Heated Bed On"), size = (tempsize, -1), style = wx.BU_EXACTFIT)
     root.printerControls.append(root.setbbtn)
     add("btemp_set", root.setbbtn, flag = wx.EXPAND)
+
+    root.setboff = make_button(parentpanel, _("Off"), lambda e: root.do_bedtemp("off"), _("Switch Heated Bed Off"), size = (tempsize, -1), style = wx.BU_EXACTFIT)
+    root.printerControls.append(root.setboff)
+    add("btemp_off", root.setboff)
 
     root.btemp.SetValue(str(root.settings.last_bed_temperature))
     root.htemp.SetValue(str(root.settings.last_temperature))
@@ -267,7 +273,7 @@ def add_extra_controls(self, root, parentpanel, extra_buttons = None, mini_mode 
     # Temperature gauges #
 
     if root.display_gauges:
-        root.hottgauge = TempGauge(parentpanel, size = (-1, 24), title = _("Heater:"), maxval = 300, bgcolor = root.bgcolor)
+        root.hottgauge = TempGauge(parentpanel, size = (-1, 24), title = _("Extruder:"), maxval = 300, bgcolor = root.bgcolor)
         add("htemp_gauge", root.hottgauge, flag = wx.EXPAND)
         root.bedtgauge = TempGauge(parentpanel, size = (-1, 24), title = _("Bed:"), maxval = 150, bgcolor = root.bgcolor)
         add("btemp_gauge", root.bedtgauge, flag = wx.EXPAND)

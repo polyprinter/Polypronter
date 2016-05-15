@@ -252,8 +252,13 @@ class MainWindow(wx.Frame):
             rightsizer.Add(self.splitterwindow, 1, wx.EXPAND)
             vizpanel = self.newPanel(self.splitterwindow)
             logpanel = self.newPanel(self.splitterwindow)
-            self.splitterwindow.SplitVertically(vizpanel, logpanel,
-                                                self.settings.last_sash_position)
+
+            if self.build_dimensions_list[0] > self.build_dimensions_list[1]*1.25:
+                self.splitterwindow.SplitHorizontally(vizpanel, logpanel,
+                                                    self.settings.last_sash_position)
+            else:
+                self.splitterwindow.SplitVertically(vizpanel, logpanel,
+                                                      self.settings.last_sash_position)
             self.splitterwindow.shrinked = False
         else:
             vizpanel = self.newPanel(lowerpanel)
