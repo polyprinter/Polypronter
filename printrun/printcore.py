@@ -17,7 +17,7 @@
 
 __version__ = "2015.03.10"
 
-from serial import Serial, SerialException, PARITY_ODD, PARITY_NONE
+from serialWrapper import Serial, SerialException, PARITY_ODD, PARITY_NONE
 from select import error as SelectError
 import threading
 from Queue import Queue, Empty as QueueEmpty
@@ -182,6 +182,7 @@ class printcore():
                     self.printer_tcp.settimeout(self.timeout)
                     self.printer = self.printer_tcp.makefile()
                 except socket.error as e:
+                    if(e.strerror is None): e.strerror=""
                     self.logError(_("Could not connect to %s:%s:") % (hostname, port) +
                                   "\n" + _("Socket error %s:") % e.errno +
                                   "\n" + e.strerror)

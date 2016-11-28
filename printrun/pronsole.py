@@ -688,7 +688,12 @@ class pronsole(cmd.Cmd):
             logger = logging.getLogger()
             logger.setLevel(logging.DEBUG)
         for config in args.conf:
-            self.load_rc(config)
+            try:
+                self.load_rc(config)
+            except EnvironmentError as err:
+                print ("ERROR: Unable to load configuration file: %s" %
+                       str(err)[10:])
+                sys.exit(1)
         if not self.rc_loaded:
             self.load_default_rc()
         self.processing_args = True
@@ -1187,8 +1192,9 @@ class pronsole(cmd.Cmd):
                                                                                 "duration": format_duration(print_duration)})
 
             # Update total filament length used
-            new_total = self.settings.total_filament_used + self.fgcode.filament_length
-            self.set("total_filament_used", new_total)
+            if self.fgcode is not None:
+                new_total = self.settings.total_filament_used + self.fgcode.filament_length
+                self.set("total_filament_used", new_total)
 
             if not self.settings.final_command:
                 return
