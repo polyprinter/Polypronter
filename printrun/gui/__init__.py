@@ -265,8 +265,10 @@ class MainWindow(wx.Frame):
             logpanel = self.newPanel(left_real_panel)
         viz_pane = VizPane(self, vizpanel)
         # Custom buttons
-        if wx.VERSION > (2, 9): self.cbuttonssizer = wx.WrapSizer(wx.HORIZONTAL)
-        else: self.cbuttonssizer = wx.GridBagSizer()
+        if wx.VERSION > (2, 9): 
+            self.cbuttonssizer = wx.WrapSizer(wx.HORIZONTAL)
+        else:
+            self.cbuttonssizer = wx.GridBagSizer()
         self.centerpanel = self.newPanel(vizpanel)
         self.centerpanel.SetSizer(self.cbuttonssizer)
         viz_pane.Add(self.centerpanel, 0, flag = wx.ALIGN_CENTER)

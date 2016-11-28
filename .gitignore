@@ -8,3 +8,9 @@ uploads
 prontserve-env
 printrun/gcoder_line.c
 printrun/gcoder_line.so
+*.suo
+build/**
+dist/**
+polypronter.spec
+printrun/gcoder_line.pyd
+pronterface.spec

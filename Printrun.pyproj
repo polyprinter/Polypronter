@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{2cbccfa0-af4a-45fc-8ee1-ef132033278b}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>pronterface.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId />
+    <InterpreterVersion />
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+    <PtvsTargetsFile>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets</PtvsTargetsFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="custombtn.txt" />
+    <Content Include="images\arrow_down.png" />
+    <Content Include="images\arrow_keys.png" />
+    <Content Include="images\arrow_up.png" />
+    <Content Include="images\control_mini.png" />
+    <Content Include="images\control_mini.svg" />
+    <Content Include="images\control_xy.png" />
+    <Content Include="images\control_xy.svg" />
+    <Content Include="images\control_z.png" />
+    <Content Include="images\control_z.svg" />
+    <Content Include="images\control_z_mini.png" />
+    <Content Include="images\control_z_mini.svg" />
+    <Content Include="images\edit.png" />
+    <Content Include="images\fit.png" />
+    <Content Include="images\inject.png" />
+    <Content Include="images\reset.png" />
+    <Content Include="images\zoom_in.png" />
+    <Content Include="images\zoom_out.png" />
+    <Content Include="plater.ico" />
+    <Content Include="plater.png" />
+    <Content Include="pronsole.ico" />
+    <Content Include="pronsole.png" />
+    <Content Include="pronterface.ico" />
+    <Content Include="pronterface.png" />
+    <Content Include="requirements.txt" />
+    <Content Include="screenshots\plater.png" />
+    <Content Include="screenshots\pronsole.png" />
+    <Content Include="screenshots\pronterface.png" />
+    <Content Include="screenshots\pronterface2.png" />
+    <Content Include="testfiles\belt_pulley3.skeinforge.large.svg" />
+    <Content Include="testfiles\belt_pulley3.skeinforge.small.svg" />
+    <Content Include="testfiles\belt_pulley3.slic3r.large.svg" />
+    <Content Include="testfiles\belt_pulley3.slic3r.small.svg" />
+    <Content Include="testfiles\grid.svg" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="calibrateextruder.py" />
+    <Compile Include="gcodeplater.py" />
+    <Compile Include="plater.py" />
+    <Compile Include="printcore.py" />
+    <Compile Include="printrun\excluder.py" />
+    <Compile Include="printrun\gcodeplater.py" />
+    <Compile Include="printrun\gcoder.py" />
+    <Compile Include="printrun\gcview.py" />
+    <Compile Include="printrun\gl\libtatlin\actors.py" />
+    <Compile Include="printrun\gl\libtatlin\__init__.py" />
+    <Compile Include="printrun\gl\panel.py" />
+    <Compile Include="printrun\gl\trackball.py" />
+    <Compile Include="printrun\gl\__init__.py" />
+    <Compile Include="printrun\gui\bufferedcanvas.py" />
+    <Compile Include="printrun\gui\controls.py" />
+    <Compile Include="printrun\gui\graph.py" />
+    <Compile Include="printrun\gui\log.py" />
+    <Compile Include="printrun\gui\toolbar.py" />
+    <Compile Include="printrun\gui\utils.py" />
+    <Compile Include="printrun\gui\viz.py" />
+    <Compile Include="printrun\gui\widgets.py" />
+    <Compile Include="printrun\gui\xybuttons.py" />
+    <Compile Include="printrun\gui\zbuttons.py" />
+    <Compile Include="printrun\gui\__init__.py" />
+    <Compile Include="printrun\gviz.py" />
+    <Compile Include="printrun\injectgcode.py" />
+    <Compile Include="printrun\objectplater.py" />
+    <Compile Include="printrun\packer.py" />
+    <Compile Include="printrun\power\osx.py" />
+    <Compile Include="printrun\power\__init__.py" />
+    <Compile Include="printrun\printcore.py" />
+    <Compile Include="printrun\projectlayer.py" />
+    <Compile Include="printrun\pronsole.py" />
+    <Compile Include="printrun\pronterface.py" />
+    <Compile Include="printrun\rpc.py" />
+    <Compile Include="printrun\settings.py" />
+    <Compile Include="printrun\stlplater.py" />
+    <Compile Include="printrun\stltool.py" />
+    <Compile Include="printrun\stlview.py" />
+    <Compile Include="printrun\utils.py" />
+    <Compile Include="printrun\zscaper.py" />
+    <Compile Include="printrun\__init__.py" />
+    <Compile Include="pronsole.py" />
+    <Compile Include="pronterface.py" />
+    <Compile Include="setup.py" />
+    <Compile Include="setup_win.py" />
+    <Compile Include="testtools\gcodeviewer.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="images" />
+    <Folder Include="printrun" />
+    <Folder Include="printrun\gl" />
+    <Folder Include="printrun\gl\libtatlin" />
+    <Folder Include="printrun\gui" />
+    <Folder Include="printrun\power" />
+    <Folder Include="screenshots" />
+    <Folder Include="testfiles" />
+    <Folder Include="testtools" />
+  </ItemGroup>
+  <Import Project="$(PtvsTargetsFile)" Condition="Exists($(PtvsTargetsFile))" />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="!Exists($(PtvsTargetsFile))" />
+</Project>
