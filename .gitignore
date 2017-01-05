@@ -11,6 +11,8 @@ printrun/gcoder_line.so
 *.suo
 build/**
 dist/**
+dist32/**
+build32/**
 polypronter.spec
 printrun/gcoder_line.pyd
 pronterface.spec

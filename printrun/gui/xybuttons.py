@@ -321,7 +321,9 @@ class XYButtons(BufferedCanvas):
                 self.zCallback(z)
         elif evt.GetKeyCode() == wx.WXK_SPACE:
             self.spacebarCallback()
-
+        elif evt.GetKeyCode() == ord('Z'):
+            self.cornerCallback("z")
+ 
     def OnMotion(self, event):
         if not self.enabled:
             return
