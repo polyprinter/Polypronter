@@ -16,3 +16,5 @@ build32/**
 polypronter.spec
 printrun/gcoder_line.pyd
 pronterface.spec
+publish.bat
+

@@ -1076,12 +1076,16 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
             scanned = self.scanserial()
             if scanned:
                 port = scanned[0]
+
+        badBaud = False
         baud = 115200
+        self.__PrinterName = None
         try:
             baud = int(self.baud.GetValue())
         except:
-            self.logError(_("Could not parse baud rate: ")
-                          + "\n" + traceback.format_exc())
+            badBaud = _("Could not parse baud rate: ") + "\n" + traceback.format_exc()
+            self.__PrinterName = self.baud.GetValue()   # take a bad baud as the printer name
+  
         if self.paused:
             self.p.paused = 0
             self.p.printing = 0
@@ -1091,11 +1095,15 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
             self.paused = 0
             if self.sdprinting:
                 self.p.send_now("M26 S0")
+
         if not self.connect_to_printer(port, baud, self.settings.dtr):
+            # only complain about the baud rate if we could not connect
+            if badBaud:
+                self.logError(badBaud)
             return
 
-        self.SetTitle( "PolyPronter - " + port );
-
+        # self.SetTitle( "PolyPronter - " + port );
+        self.setCompleteWindowTitle()
         if port != self.settings.port:
             self.set("port", port)
         if baud != self.settings.baudrate:
@@ -1448,10 +1456,22 @@ Printrun. If not, see <http://www.gnu.org/licenses/>."""
         self.start_viz_thread(gcode)
         return gcode
 
+    def setCompleteWindowTitle( self ):
+        longTitle = _(u"PolyPronter")
+        if self.__PrinterName :
+            longTitle += " '%s'" % self.__PrinterName
+        if self.settings.port :
+            longTitle += " - %s" % self.settings.port
+        if self.filename :
+            longTitle += " - %s" % self.filename
+
+        self.SetTitle(longTitle)
+ 
     def post_gcode_load(self, print_stats = True):
         # Must be called in wx.CallAfter for safety
         self.loading_gcode = False
-        self.SetTitle(_(u"Pronterface - %s") % self.filename)
+        # self.SetTitle(_(u"Pronterface - %s") % self.filename)
+        self.setCompleteWindowTitle()
         message = _("Loaded %s, %d lines") % (self.filename, len(self.fgcode),)
         self.log(message)
         self.statusbar.SetStatusText(message)
