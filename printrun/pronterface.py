@@ -114,6 +114,7 @@ class ComboSetting(wxSetting):
 class PronterWindow(MainWindow, pronsole.pronsole):
 
     _fgcode = None
+    __PrinterName = None
 
     def _get_fgcode(self):
         return self._fgcode

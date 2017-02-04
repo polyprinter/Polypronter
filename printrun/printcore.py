@@ -532,7 +532,12 @@ class printcore():
             self.clear = True
             return
         if self.resendfrom < self.lineno and self.resendfrom > -1:
-            self._send(self.sentlines[self.resendfrom], self.resendfrom, False)
+            try:
+                self._send(self.sentlines[self.resendfrom], self.resendfrom, False)
+            except KeyError:
+                print "Resending: Error - could not find line %d in history\n", self.resendfrom 
+                self.logError(_(u"Resending:Error - could not find line {0} in history").format( self.resendfrom ) )
+
             self.resendfrom += 1
             return
         self.resendfrom = -1

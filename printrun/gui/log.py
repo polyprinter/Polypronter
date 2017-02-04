@@ -22,7 +22,7 @@ class LogPane(wx.BoxSizer):
     def __init__(self, root, parentpanel = None):
         super(LogPane, self).__init__(wx.VERTICAL)
         if not parentpanel: parentpanel = root.panel
-        root.logbox = wx.TextCtrl(parentpanel, style = wx.TE_MULTILINE, size = (3500, -1))
+        root.logbox = wx.TextCtrl(parentpanel, style = wx.TE_MULTILINE, size = (10000, -1))
         root.logbox.SetMinSize((100, -1))
         root.logbox.SetEditable(0)
         self.Add(root.logbox, 1, wx.EXPAND)
