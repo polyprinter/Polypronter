@@ -1,0 +1,3 @@
+Open a console window on this folder E:\GitHub\Printrun (shift-right click on folder node in left pane, Open Command Window Here)
+Run makebat.bat this should end with an xcopy. Output is in dist/
+Run publish.bat to move the new version to where the installer can package it up

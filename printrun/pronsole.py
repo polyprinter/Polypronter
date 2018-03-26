@@ -1618,7 +1618,7 @@ class pronsole(cmd.Cmd):
             self.p.send_now("G92 E0")
         if not len(l):
             self.p.send_now("G28")
-            self.p.send_now("G92 E0")
+            # this would cause Duet to revert to Relative extruder, if seen. self.p.send_now("G92 E0")
 
     def help_home(self):
         self.log(_("Homes the printer"))

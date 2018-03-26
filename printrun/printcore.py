@@ -610,7 +610,9 @@ class printcore():
                 logging.info("SENT: %s" % command)
             if self.sendcb:
                 try: self.sendcb(command, gline)
-                except: self.logError(traceback.format_exc())
+                except: 
+                    self.logError(traceback.format_exc())
+                    logging.warning( _("command %s:") % command )
             try:
                 self.printer.write(str(command + "\n"))
                 if self.printer_tcp:
