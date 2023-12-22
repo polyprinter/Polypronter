@@ -22,8 +22,7 @@ import objc
 
 def SetUpIOFramework():
     # load the IOKit library
-    framework = ctypes.cdll.LoadLibrary(
-        '/System/Library/Frameworks/IOKit.framework/IOKit')
+    framework = ctypes.cdll.LoadLibrary('/System/Library/Frameworks/IOKit.framework/IOKit')
 
     # declare parameters as described in IOPMLib.h
     framework.IOPMAssertionCreateWithName.argtypes = [
@@ -41,6 +40,7 @@ def StringToCFString(string):
         encoding = CoreFoundation.kCFStringEncodingASCII
     except AttributeError:
         encoding = 0x600
+    string = string.encode('ascii')
     cfstring = CoreFoundation.CFStringCreateWithCString(None, string, encoding)
     return objc.pyobjc_id(cfstring.nsstring())
 

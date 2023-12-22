@@ -18,10 +18,7 @@ import logging
 
 import wx
 
-class NoViz(object):
-
-    showall = False
-
+class BaseViz:
     def clear(self, *a):
         pass
 
@@ -35,19 +32,21 @@ class NoViz(object):
     def addfile(self, *a, **kw):
         pass
 
-    def addgcode(self, *a, **kw):
-        pass
-
     def addgcodehighlight(self, *a, **kw):
-        pass
-
-    def Refresh(self, *a):
         pass
 
     def setlayer(self, *a):
         pass
 
-class NoVizWindow(object):
+    def on_settings_change(self, changed_settings):
+        pass
+
+class NoViz(BaseViz):
+    showall = False
+    def Refresh(self, *a):
+        pass
+
+class NoVizWindow:
 
     def __init__(self):
         self.p = NoViz()
@@ -68,7 +67,14 @@ class VizPane(wx.BoxSizer):
         if root.settings.mainviz == "3D":
             try:
                 import printrun.gcview
-                root.gviz = printrun.gcview.GcodeViewMainWrapper(parentpanel, root.build_dimensions_list, root = root, circular = root.settings.circular_bed, antialias_samples = int(root.settings.antialias3dsamples))
+                root.gviz = printrun.gcview.GcodeViewMainWrapper(
+                    parentpanel,
+                    root.build_dimensions_list,
+                    root = root,
+                    circular = root.settings.circular_bed,
+                    antialias_samples = int(root.settings.antialias3dsamples),
+                    grid = (root.settings.preview_grid_step1, root.settings.preview_grid_step2),
+                    perspective = root.settings.perspective)
                 root.gviz.clickcb = root.show_viz_window
             except:
                 use2dview = True
@@ -92,7 +98,15 @@ class VizPane(wx.BoxSizer):
                 objects = None
                 if isinstance(root.gviz, printrun.gcview.GcodeViewMainWrapper):
                     objects = root.gviz.objects
-                root.gwindow = printrun.gcview.GcodeViewFrame(None, wx.ID_ANY, 'Gcode view, shift to move view, mousewheel to set layer', size = (600, 600), build_dimensions = root.build_dimensions_list, objects = objects, root = root, circular = root.settings.circular_bed, antialias_samples = int(root.settings.antialias3dsamples))
+                root.gwindow = printrun.gcview.GcodeViewFrame(None, wx.ID_ANY, 'G-Code Viewer',
+                    size = (600, 600),
+                    build_dimensions = root.build_dimensions_list,
+                    objects = objects,
+                    root = root,
+                    circular = root.settings.circular_bed,
+                    antialias_samples = int(root.settings.antialias3dsamples),
+                    grid = (root.settings.preview_grid_step1, root.settings.preview_grid_step2),
+                    perspective=root.settings.perspective)
             except:
                 use3dview = False
                 logging.error("3D view mode requested, but we failed to initialize it.\n"
@@ -106,4 +120,4 @@ class VizPane(wx.BoxSizer):
                                            bgcolor = root.bgcolor)
         root.gwindow.Bind(wx.EVT_CLOSE, lambda x: root.gwindow.Hide())
         if not isinstance(root.gviz, NoViz):
-            self.Add(root.gviz.widget, 1, flag = wx.EXPAND | wx.ALIGN_CENTER_HORIZONTAL)
+            self.Add(root.gviz.widget, 1, flag = wx.EXPAND)

@@ -17,8 +17,10 @@ import logging
 
 try:
     import wx
+    if wx.VERSION < (4,):
+        raise ImportError()
 except:
-    logging.error(_("WX is not installed. This program requires WX to run."))
+    logging.error(_("WX >= 4 is not installed. This program requires WX >= 4 to run."))
     raise
 
 from printrun.utils import install_locale
@@ -33,13 +35,14 @@ class ToggleablePane(wx.BoxSizer):
 
     def __init__(self, root, label, parentpanel, parentsizers):
         super(ToggleablePane, self).__init__(wx.HORIZONTAL)
-        if not parentpanel: parentpanel = root.panel
+        if not parentpanel:
+            parentpanel = root.panel
         self.root = root
         self.visible = True
         self.parentpanel = parentpanel
         self.parentsizers = parentsizers
         self.panepanel = root.newPanel(parentpanel)
-        self.button = wx.Button(parentpanel, -1, label, size = (22, 18), style = wx.BU_EXACTFIT)
+        self.button = wx.Button(parentpanel, -1, label, size = (35, 18), style = wx.BU_EXACTFIT)
         self.button.Bind(wx.EVT_BUTTON, self.toggle)
 
     def toggle(self, event):
@@ -54,7 +57,7 @@ class ToggleablePane(wx.BoxSizer):
 
 class LeftPaneToggleable(ToggleablePane):
     def __init__(self, root, parentpanel, parentsizers):
-        super(LeftPaneToggleable, self).__init__(root, "<", parentpanel, parentsizers)
+        super().__init__(root, "<", parentpanel, parentsizers)
         self.Add(self.panepanel, 0, wx.EXPAND)
         self.Add(self.button, 0)
 
@@ -89,8 +92,9 @@ class LogPaneToggleable(ToggleablePane):
         self.splitter.SetSashPosition(self.splitter.GetSize()[0] - self.orig_width)
         self.splitter.SetMinimumPaneSize(self.orig_min_size)
         self.splitter.SetSashGravity(self.orig_gravity)
-        if hasattr(self.splitter, "SetSashSize"): self.splitter.SetSashSize(self.orig_sash_size)
-        if hasattr(self.splitter, "SetSashInvisible"): self.splitter.SetSashInvisible(False)
+        if getattr(self.splitter, 'SetSashSize', False):
+            self.splitter.SetSashSize(self.orig_sash_size)
+        getattr(self.splitter, 'SetSashInvisible', bool)(False)
         for sizer in self.parentsizers:
             sizer.Layout()
 
@@ -103,20 +107,20 @@ class LogPaneToggleable(ToggleablePane):
         self.splitter.SetMinimumPaneSize(button_width)
         self.splitter.SetSashGravity(1)
         self.splitter.SetSashPosition(self.splitter.GetSize()[0] - button_width)
-        if hasattr(self.splitter, "SetSashSize"):
+        if getattr(self.splitter, 'SetSashSize', False):
             self.orig_sash_size = self.splitter.GetSashSize()
             self.splitter.SetSashSize(0)
-        if hasattr(self.splitter, "SetSashInvisible"): self.splitter.SetSashInvisible(True)
+        getattr(self.splitter, 'SetSashInvisible', bool)(True)
         for sizer in self.parentsizers:
             sizer.Layout()
 
 class MainWindow(wx.Frame):
 
     def __init__(self, *args, **kwargs):
-        super(MainWindow, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         # this list will contain all controls that should be only enabled
         # when we're connected to a printer
-        self.panel = wx.Panel(self, -1)
+        self.panel = wx.Panel(self)
         self.reset_ui()
         self.statefulControls = []
 
@@ -131,7 +135,8 @@ class MainWindow(wx.Frame):
 
     def registerPanel(self, panel, add_to_list = True):
         panel.SetBackgroundColour(self.bgcolor)
-        if add_to_list: self.panels.append(panel)
+        if add_to_list:
+            self.panels.append(panel)
 
     def createTabbedGui(self):
         self.notesizer = wx.BoxSizer(wx.VERTICAL)
@@ -199,12 +204,9 @@ class MainWindow(wx.Frame):
             self.notebook.AddPage(page4panel, _("G-Code Plater"))
         self.panel.SetSizer(self.notesizer)
         self.panel.Bind(wx.EVT_MOUSE_EVENTS, self.editbutton)
-        self.Bind(wx.EVT_CLOSE, self.kill)
 
         # Custom buttons
-        if wx.VERSION > (2, 9): self.cbuttonssizer = wx.WrapSizer(wx.HORIZONTAL)
-        else: self.cbuttonssizer = wx.GridBagSizer()
-        self.cbuttonssizer = wx.GridBagSizer()
+        self.cbuttonssizer = wx.WrapSizer(wx.HORIZONTAL)
         self.centerpanel = self.newPanel(page1panel2)
         self.centerpanel.SetSizer(self.cbuttonssizer)
         rightsizer.Add(self.centerpanel, 0, wx.ALIGN_CENTER)
@@ -237,11 +239,15 @@ class MainWindow(wx.Frame):
         left_sizer.Add(controls_panel, 1, wx.EXPAND)
         left_pane.set_sizer(left_sizer)
         self.lowersizer.Add(leftpanel, 0, wx.EXPAND)
-        if not compact:  # Use a splitterwindow to group viz and log
+        if compact:
+            vizpanel = self.newPanel(lowerpanel)
+            logpanel = self.newPanel(left_real_panel)
+        else:
+            # Use a splitterwindow to group viz and log
             rightpanel = self.newPanel(lowerpanel)
             rightsizer = wx.BoxSizer(wx.VERTICAL)
             rightpanel.SetSizer(rightsizer)
-            self.splitterwindow = wx.SplitterWindow(rightpanel, style = wx.SP_3D)
+            self.splitterwindow = wx.SplitterWindow(rightpanel, style = wx.SP_3D | wx.SP_LIVE_UPDATE)
             self.splitterwindow.SetMinimumPaneSize(150)
             self.splitterwindow.SetSashGravity(0.8)
             rightsizer.Add(self.splitterwindow, 1, wx.EXPAND)
@@ -250,13 +256,9 @@ class MainWindow(wx.Frame):
             self.splitterwindow.SplitVertically(vizpanel, logpanel,
                                                 self.settings.last_sash_position)
             self.splitterwindow.shrinked = False
-        else:
-            vizpanel = self.newPanel(lowerpanel)
-            logpanel = self.newPanel(left_real_panel)
         viz_pane = VizPane(self, vizpanel)
         # Custom buttons
-        if wx.VERSION > (2, 9): self.cbuttonssizer = wx.WrapSizer(wx.HORIZONTAL)
-        else: self.cbuttonssizer = wx.GridBagSizer()
+        self.cbuttonssizer = wx.WrapSizer(wx.HORIZONTAL)
         self.centerpanel = self.newPanel(vizpanel)
         self.centerpanel.SetSizer(self.cbuttonssizer)
         viz_pane.Add(self.centerpanel, 0, flag = wx.ALIGN_CENTER)
@@ -267,19 +269,18 @@ class MainWindow(wx.Frame):
             log_pane = LogPaneToggleable(self, logpanel, [self.lowersizer])
             left_pane.parentsizers.append(self.splitterwindow)
         logpanel.SetSizer(log_pane)
-        if not compact:
-            self.lowersizer.Add(rightpanel, 1, wx.EXPAND)
-        else:
+        if compact:
             left_sizer.Add(logpanel, 1, wx.EXPAND)
             self.lowersizer.Add(vizpanel, 1, wx.EXPAND)
+        else:
+            self.lowersizer.Add(rightpanel, 1, wx.EXPAND)
         self.mainsizer.Add(upperpanel, 0, wx.EXPAND)
         self.mainsizer.Add(lowerpanel, 1, wx.EXPAND)
         self.panel.SetSizer(self.mainsizer)
         self.panel.Bind(wx.EVT_MOUSE_EVENTS, self.editbutton)
-        self.Bind(wx.EVT_CLOSE, self.kill)
 
         self.mainsizer.Layout()
-        # This prevents resizing below a reasonnable value
+        # This prevents resizing below a reasonable value
         # We sum the lowersizer (left pane / viz / log) min size
         # the toolbar height and the statusbar/menubar sizes
         minsize = [0, 0]

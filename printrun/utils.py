@@ -14,29 +14,54 @@
 # along with Printrun.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import platform
 import sys
 import re
 import gettext
 import datetime
 import subprocess
 import shlex
+import locale
 import logging
+
+from pathlib import Path
+
+DATADIR = os.path.join(sys.prefix, 'share')
+
+
+def set_utf8_locale():
+    """Make sure we read/write all text files in UTF-8"""
+    lang, encoding = locale.getlocale()
+    if encoding != 'UTF-8':
+        locale.setlocale(locale.LC_CTYPE, (lang, 'UTF-8'))
 
 # Set up Internationalization using gettext
 # searching for installed locales on /usr/share; uses relative folder if not
 # found (windows)
 def install_locale(domain):
-    if os.path.exists('/usr/share/pronterface/locale'):
-        gettext.install(domain, '/usr/share/pronterface/locale', unicode = 1)
-    elif os.path.exists('/usr/local/share/pronterface/locale'):
-        gettext.install(domain, '/usr/local/share/pronterface/locale',
-                        unicode = 1)
+    shared_locale_dir = os.path.join(DATADIR, 'locale')
+    translation = None
+    lang = locale.getdefaultlocale()
+    osPlatform = platform.system()
+
+    if osPlatform == "Darwin":
+        # improvised workaround for macOS crash with gettext.translation, see issue #1154
+        if os.path.exists(shared_locale_dir):
+            gettext.install(domain, shared_locale_dir)
+        else:
+            gettext.install(domain, './locale')
     else:
-        gettext.install(domain, './locale', unicode = 1)
+        if os.path.exists('./locale'):
+            translation = gettext.translation(domain, './locale',
+                                              languages=[lang[0]], fallback= True)
+        else:
+            translation = gettext.translation(domain, shared_locale_dir,
+                                              languages=[lang[0]], fallback= True)
+        translation.install()
 
 class LogFormatter(logging.Formatter):
     def __init__(self, format_default, format_info):
-        super(LogFormatter, self).__init__(format_info)
+        super().__init__(format_info)
         self.format_default = format_default
         self.format_info = format_info
 
@@ -45,7 +70,7 @@ class LogFormatter(logging.Formatter):
             self._fmt = self.format_info
         else:
             self._fmt = self.format_default
-        return super(LogFormatter, self).format(record)
+        return super().format(record)
 
 def setup_logging(out, filepath = None, reset_handlers = False):
     logger = logging.getLogger()
@@ -59,34 +84,74 @@ def setup_logging(out, filepath = None, reset_handlers = False):
     if filepath:
         if os.path.isdir(filepath):
             filepath = os.path.join(filepath, "printrun.log")
+        else:
+            # Fallback for logging path of non console windows applications:
+            # Use users home directory in case the file path in printrunconf.ini
+            # is not valid or do not exist, see issue #1300
+            filepath = os.path.join(Path.home(), "printrun.log")
         formatter = LogFormatter("%(asctime)s - [%(levelname)s] %(message)s", "%(asctime)s - %(message)s")
         logging_handler = logging.FileHandler(filepath)
         logging_handler.setFormatter(formatter)
         logger.addHandler(logging_handler)
 
 def iconfile(filename):
+    '''
+    Get the full path to filename by checking in standard icon locations
+    ("pixmaps" directories) or use the frozen executable if applicable
+    (See the lookup_file function's documentation for behavior).
+    '''
     if hasattr(sys, "frozen") and sys.frozen == "windows_exe":
         return sys.executable
-    else:
-        return pixmapfile(filename)
+    return pixmapfile(filename)
 
 def imagefile(filename):
-    for prefix in ['/usr/local/share/pronterface/images',
-                   '/usr/share/pronterface/images']:
-        candidate = os.path.join(prefix, filename)
-        if os.path.exists(candidate):
-            return candidate
-    local_candidate = os.path.join(os.path.dirname(sys.argv[0]),
-                                   "images", filename)
-    if os.path.exists(local_candidate):
-        return local_candidate
-    else:
-        return os.path.join("images", filename)
+    '''
+    Get the full path to filename by checking standard image locations,
+    those being possible locations of the pronterface "images" directory
+    (See the lookup_file function's documentation for behavior).
+    '''
+    my_local_share = os.path.join(
+        os.path.dirname(os.path.dirname(sys.argv[0])),
+        "share",
+        "pronterface"
+    )  # Used by pip install
+    image_dirs = [
+        os.path.join(DATADIR, 'pronterface', 'images'),
+        os.path.join(os.path.dirname(sys.argv[0]), "images"),
+        os.path.join(my_local_share, "images"),
+        os.path.join(
+            getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
+            "images"
+        ),  # Check manually since lookup_file checks in frozen but not /images
+    ]
+    path = lookup_file(filename, image_dirs)
+    if path == filename:
+        # The file wasn't found in any known location, so use a relative
+        #   path.
+        path = os.path.join("images", filename)
+    return path
 
 def lookup_file(filename, prefixes):
+    '''
+    Get the full path to filename by checking one or more prefixes,
+    or in the frozen data if applicable. If a result from this
+    (or from callers such as imagefile) is used for the wx.Image
+    constructor and filename isn't found, the C++ part of wx
+    will raise an exception (wx._core.wxAssertionError): "invalid
+    image".
+
+    Sequential arguments:
+    filename -- a filename without the path.
+    prefixes -- a list of paths.
+
+    Returns:
+    The full path if found, or filename if not found.
+    '''
     local_candidate = os.path.join(os.path.dirname(sys.argv[0]), filename)
     if os.path.exists(local_candidate):
         return local_candidate
+    if getattr(sys, "frozen", False):
+        prefixes += [getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),]
     for prefix in prefixes:
         candidate = os.path.join(prefix, filename)
         if os.path.exists(candidate):
@@ -94,21 +159,40 @@ def lookup_file(filename, prefixes):
     return filename
 
 def pixmapfile(filename):
-    return lookup_file(filename, ['/usr/local/share/pixmaps',
-                                  '/usr/share/pixmaps'])
+    '''
+    Get the full path to filename by checking in standard icon
+    ("pixmaps") directories (See the lookup_file function's
+    documentation for behavior).
+    '''
+    shared_pixmaps_dir = os.path.join(DATADIR, 'pixmaps')
+    local_pixmaps_dir = os.path.join(
+        os.path.dirname(os.path.dirname(sys.argv[0])),
+        "share",
+        "pixmaps"
+    )  # Used by pip install
+    pixmaps_dirs = [shared_pixmaps_dir, local_pixmaps_dir]
+    return lookup_file(filename, pixmaps_dirs)
 
 def sharedfile(filename):
-    return lookup_file(filename, ['/usr/local/share/pronterface',
-                                  '/usr/share/pronterface'])
+    '''
+    Get the full path to filename by checking in the shared
+    directory (See the lookup_file function's documentation for behavior).
+    '''
+    shared_pronterface_dir = os.path.join(DATADIR, 'pronterface')
+    return lookup_file(filename, [shared_pronterface_dir])
 
 def configfile(filename):
+    '''
+    Get the full path to filename by checking in the
+    standard configuration directory (See the lookup_file
+    function's documentation for behavior).
+    '''
     return lookup_file(filename, [os.path.expanduser("~/.printrun/"), ])
 
 def decode_utf8(s):
-    try:
-        s = s.decode("utf-8")
-    except:
-        pass
+    """Attempt to decode a string, return the string otherwise"""
+    if isinstance(s, bytes):
+        return s.decode()
     return s
 
 def format_time(timestamp):
@@ -118,31 +202,32 @@ def format_duration(delta):
     return str(datetime.timedelta(seconds = int(delta)))
 
 def prepare_command(command, replaces = None):
-    command = shlex.split(command.replace("\\", "\\\\").encode())
+    command = shlex.split(command.replace("\\", "\\\\"))
     if replaces:
         replaces["$python"] = sys.executable
         for pattern, rep in replaces.items():
             command = [bit.replace(pattern, rep) for bit in command]
-    command = [bit.encode() for bit in command]
     return command
 
-def run_command(command, replaces = None, stdout = subprocess.STDOUT, stderr = subprocess.STDOUT, blocking = False):
+def run_command(command, replaces = None, stdout = subprocess.STDOUT,
+                stderr = subprocess.STDOUT, blocking = False,
+                universal_newlines = False):
     command = prepare_command(command, replaces)
     if blocking:
-        return subprocess.call(command)
-    else:
-        return subprocess.Popen(command, stderr = stderr, stdout = stdout)
+        return subprocess.call(command, universal_newlines = universal_newlines)
+    return subprocess.Popen(command, stderr = stderr, stdout = stdout,
+                            universal_newlines = universal_newlines)
 
 def get_command_output(command, replaces):
     p = run_command(command, replaces,
                     stdout = subprocess.PIPE, stderr = subprocess.STDOUT,
-                    blocking = False)
+                    blocking = False, universal_newlines = True)
     return p.stdout.read()
 
 def dosify(name):
     return os.path.split(name)[1].split(".")[0][:8] + ".g"
 
-class RemainingTimeEstimator(object):
+class RemainingTimeEstimator:
 
     drift = None
     gcode = None
@@ -153,6 +238,8 @@ class RemainingTimeEstimator(object):
         self.current_layer_estimate = 0
         self.current_layer_lines = 0
         self.gcode = gcode
+        self.last_idx = -1
+        self.last_estimate = None
         self.remaining_layers_estimate = sum(layer.duration for layer in gcode.all_layers)
         if len(gcode) > 0:
             self.update_layer(0, 0)
@@ -172,6 +259,8 @@ class RemainingTimeEstimator(object):
             return (0, 0)
         if idx == self.last_idx:
             return self.last_estimate
+        if idx >= len(self.gcode.layer_idxs):
+            return self.last_estimate
         layer, line = self.gcode.idxs(idx)
         layer_progress = (1 - (float(line + 1) / self.current_layer_lines))
         remaining = layer_progress * self.current_layer_estimate + self.remaining_layers_estimate
@@ -189,14 +278,15 @@ def parse_build_dimensions(bdim):
     # "XXXxYYY+xxx-yyy"
     # "XXX,YYY,ZZZ+xxx+yyy-zzz"
     # etc
-    bdl = re.findall("([-+]?[0-9]*\.?[0-9]*)", bdim)
+    bdl = re.findall(r"([-+]?[0-9]*\.?[0-9]*)", bdim)
     defaults = [200, 200, 100, 0, 0, 0, 0, 0, 0]
-    bdl = filter(None, bdl)
+    bdl = [b for b in bdl if b]
     bdl_float = [float(value) if value else defaults[i] for i, value in enumerate(bdl)]
     if len(bdl_float) < len(defaults):
         bdl_float += [defaults[i] for i in range(len(bdl_float), len(defaults))]
     for i in range(3):  # Check for nonpositive dimensions for build volume
-        if bdl_float[i] <= 0: bdl_float[i] = 1
+        if bdl_float[i] <= 0:
+            bdl_float[i] = 1
     return bdl_float
 
 def get_home_pos(build_dimensions):
@@ -205,7 +295,7 @@ def get_home_pos(build_dimensions):
 def hexcolor_to_float(color, components):
     color = color[1:]
     numel = len(color)
-    ndigits = numel / components
+    ndigits = numel // components
     div = 16 ** ndigits - 1
     return tuple(round(float(int(color[i:i + ndigits], 16)) / div, 2)
                  for i in range(0, numel, ndigits))
@@ -222,7 +312,25 @@ def check_rgba_color(color):
         ex.from_validator = True
         raise ex
 
-tempreport_exp = re.compile("([TB]\d*):([-+]?\d*\.?\d*)(?: ?\/)?([-+]?\d*\.?\d*)")
+
+tempreport_exp = re.compile(r"([TB]\d*):([-+]?\d*\.?\d*)(?: ?\/)?([-+]?\d*\.?\d*)")
 def parse_temperature_report(report):
     matches = tempreport_exp.findall(report)
     return dict((m[0], (m[1], m[2])) for m in matches)
+
+def compile_file(filename):
+    with open(filename, 'r', encoding='utf-8') as f:
+        return compile(f.read(), filename, 'exec')
+
+def read_history_from(filename):
+    history = []
+    if os.path.exists(filename):
+        with open(filename, 'r', encoding='utf-8') as _hf:
+            for i in _hf:
+                history.append(i.rstrip())
+    return history
+
+def write_history_to(filename, hist):
+    with open(filename, 'w', encoding='utf-8') as _hf:
+        for i in hist:
+            _hf.write(i + '\n')

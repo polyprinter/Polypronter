@@ -1,161 +1,248 @@
-Printrun consists of printcore, pronsole and pronterface, and a small collection of helpful scripts.
+# PRINTRUN
+![License](https://img.shields.io/github/license/kliment/Printrun)
+![GitHub - Downloads](https://img.shields.io/github/downloads/kliment/Printrun/total?logo=github)
+![GitHub contributors](https://img.shields.io/github/contributors/kliment/Printrun?logo=github)
+![PyPI - Version](https://img.shields.io/pypi/v/Printrun?logo=pypi&label=PyPI)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/Printrun?logo=pypi)
 
-  * printcore.py is a library that makes writing reprap hosts easy
-  * pronsole.py is an interactive command-line host software with tabcompletion goodness
-  * pronterface.py is a graphical host software with the same functionality as pronsole
+Printrun consists of a suite of hosts for 3D printers and other CNC machines
+(printcore, pronsole and pronterface) and a small collection of helpful
+scripts.
+
+ * **printcore.py** is a library that makes writing [RepRap][1] hosts easy
+ * **pronsole.py** is an interactive command-line host with tab-completion
+   goodness
+ * **pronterface.py** is a graphical host with the same functionality as
+   pronsole
+
+The contents of this document are organized in the following sections:
+
+ - [Getting Printrun](#getting-printrun)
+   * [Distributed Binaries and Packages](#distributed-binaries-and-packages)
+     + [Windows and macOS pre-compiled binaries](#windows-and-macos-pre-compiled-binaries)
+     + [Linux packages from official repositories](#linux-packages-from-official-repositories)
+     + [Printrun package from PyPI](#printrun-package-from-pypi)
+   * [Running From Source](#running-from-source)
+ - [Using Printrun](#using-printrun)
+   * [Using Pronterface](#using-pronterface)
+   * [Using Pronsole](#using-pronsole)
+   * [Using Printcore](#using-printcore)
+   * [Platers](#platers)
+   * [3D Viewer Controls](#3d-viewer-controls)
+   * [RPC Server](#rpc-server)
+   * [Configuration](#configuration)
+   * [Using Macros And Custom Buttons](#using-macros-and-custom-buttons)
+   * [Using Host Commands](#using-host-commands)
+ - [Testing](#testing)
+ - [Contributing](#contributing)
+ - [Contributors](#contributors)
+ - [License](#license)
+
+
+[1]: https://en.wikipedia.org/wiki/RepRap
+
 
 # GETTING PRINTRUN
 
-This section suggests using precompiled binaries, this way you get everything bundled into one single package for an easy installation.
+Installation of Printrun can be done in several ways, either installing a
+pre-compiled binary, via distribution-specific packages from official
+repositories or from PyPI. If you want the newest, shiniest features, you can
+[run Printrun from source](#running-from-source).
 
-If you want the newest, shiniest features, you can run Printrun from source using the instructions further down this README.
+## Distributed Binaries and Packages
 
-## Windows
+### Windows and macOS pre-compiled binaries
 
-A precompiled version is available at http://koti.kapsi.fi/~kliment/printrun/
+Everything bundled into one single package for easy installation. Downloads
+available at: https://github.com/kliment/Printrun/releases/latest
 
-## Mac OS X
+> **Note for OSX users**: if OSX tells you `"pronterface.app" cannot be opened
+> because the developer cannot be verified.`, you don't need to re-download
+> it. Instead, you need to allow OSX to run the unsigned app. To do this,
+> right click the application in Finder and select `Open`. Then click `Open`
+> in the popup window that appears. You only need to do this once.
 
-A precompiled version is available at http://koti.kapsi.fi/~kliment/printrun/
 
-## Linux
-### Ubuntu/Debian
+### Linux packages from official repositories
 
-You can run Printrun directly from source. Fetch and install the dependencies using
+#### Ubuntu / Mint / Raspberry Pi OS / Debian
 
-1. `sudo apt-get install python-serial python-wxgtk2.8 python-pyglet python-numpy cython python-libxml2 python-gobject python-dbus python-psutil python-cairosvg git`
+Install the full suite: `sudo apt install printrun`
 
-Clone the repository
+Or only the apps you need: `sudo apt install pronsole` or `pronterface` or
+`plater`
 
-`git clone https://github.com/kliment/Printrun.git`
 
-and you can start using Printrun from the Printrun directory created by the git clone command.
+#### Chrome OS
 
-Users of Ubuntu Xenial Xerus or later and Debian Jessie or later won't find the package "python-wxgtk2.8" available, having been replaced by "python-wxgtk3.0". Running Printrun with "python-wxgtk3.0" instead, is possible but it is known to be affected by issue #615.
-
-A Printrun preliminary package is already available in Ubuntu Yakkety Yak and Debian Stretch/Sid repositories. Please be aware that this initial package is also known to be affected by issue #615.
-
-### Chrome OS 
-
-You can use Printrun via crouton ( https://github.com/dnschneid/crouton ). Assuming you want Ubuntu Trusty, you used probably `sudo sh -e ~/Downloads/crouton -r trusty -t xfce` to install Ubuntu. Fetch and install dependencies with the line given above for Ubuntu/Debian, and obtain the source via git clone.
+You can use Printrun via crouton ( https://github.com/dnschneid/crouton ). Assuming you want Ubuntu Trusty, you used probably `sudo sh -e ~/Downloads/crouton -r trusty -t xfce` to install Ubuntu. Fetch and install printrun with the line given above for Ubuntu/Debian.
 
 By default you have no access to the serial port under Chrome OS crouton, so you cannot connect to your 3D printer. Add yourself to the serial group within the linux environment to fix this
 
-`sudo usermod -G serial -a <username>` 
+`sudo usermod -G serial -a <username>`
 
-where `<username>` should be your username. Log out and in to make this group change active and allow communication with your printer. 
+where `<username>` should be your username. Log out and in to make this group change active and allow communication with your printer.
 
-### Fedora
 
-You can install Printrun from official packages. Install the whole package using
+#### Fedora
 
-`sudo yum install printrun`
+Install the full suite: `sudo dnf install printrun`
 
-Or get only apps you need by
+Or only the apps you need: `sudo dnf install pronsole` or `pronterface` or
+`plater`
 
-`sudo yum install pronsole` or `pronterface` or `plater`
+> Adding `--enablerepo updates-testing` option to `dnf` might sometimes give
+> you newer packages (but also not very tested).
 
-Adding `--enablerepo updates-testing` option to `yum` might give you newer packages (but also not very tested).
 
-You can also run Printrun directly from source, if the packages are too old for you. Fetch and install the dependencies using
-
-1. `sudo yum install pyserial wxPython python-pyglet python-cairosvg`
-
-Optional: `sudo yum install skeinforge simarrange`
-
-### Archlinux
+#### Arch Linux
 
 Packages are available in AUR. Just run
 
 `yaourt printrun`
 
-and enjoy the `pronterface`, `pronsole`, ... commands directly.
 
-## RUNNING FROM SOURCE
+### Printrun package from PyPI
 
-Run Printrun for source if you want to test out the latest features.
+If you have a working Python environment, regardless of your OS, you can
+install the latest release distributed through the PyPI repository using
+[pip][2] and, optionally (but highly recommended), a [virtual environment][3].
 
-### Dependencies
+Activate your virtual environment, and run (Linux / macOS):
 
-To use pronterface, you need:
+`python -m pip install Printrun`
 
-  * python (ideally 2.6.x or 2.7.x),
-  * pyserial (or python-serial on ubuntu/debian)
-  * pyreadline (not needed on Linux) and
-  * argparse (installed by default with python >= 2.7)
-  * wxPython (some features such as Tabbed mode work better with wx 2.9)
-  * pyglet
-  * numpy (for 3D view)
-  * pycairo (to use Projector feature)
-  * cairosvg (to use Projector feature)
-  * dbus (to inhibit sleep on some Linux systems)
+or (Windows):
 
-Please see specific instructions for Windows and Mac OS X below. Under Linux, you should use your package manager directly (see the "GETTING PRINTRUN" section), or pip:
+`py -m pip install Printrun`
 
-```pip install -r requirements.txt```
 
-### Cython-based G-Code parser
+[2]: https://pip.pypa.io/
+[3]: https://docs.python.org/3/tutorial/venv
 
-Printrun default G-Code parser is quite memory hungry, but we also provide a much lighter one which just needs an extra build-time dependency (Cython), plus compiling the extension with:
+## Running From Source
 
-    python setup.py build_ext --inplace
+By running Printrun from source you get access to the latest features and
+in-development changes. Warning note: these might not be fully working or
+stable.
 
-The warning message
+### Linux / macOS
 
-    WARNING:root:Memory-efficient GCoder implementation unavailable: No module named gcoder_line
+#### 1. Install Python
 
-means that this optimized G-Code parser hasn't been compiled. To get rid of it and benefit from the better implementation, please install Cython and run the command above.
+Almost all Linux distributions come with Python already pre-installed. If not,
+install Python normally from your package manager. On macOS download and
+install the latest Python from [python.org][4].
+
+[4]: https://www.python.org/downloads/macos/
+
+
+#### 2. Download the latest Printrun source code
+
+Obtain the latest source code by running the following in a terminal window:
+
+```shell
+$ git clone https://github.com/kliment/Printrun.git  # clone the repository
+$ cd Printrun  # change to Printrun directory
+```
+
+
+#### 3. Use a Python virtual environment
+
+Easiest way to run Printrun from source is to create and use a Python [virtual
+environment][3]. This step is optional but highly recommended to avoid
+conflicts with other Python libraries already installed (or that will be
+installed in the future) in your system. Within the Printrun's root directory,
+create and activate a virtual environment by running:
+
+```shell
+$ python -m venv venv       # create a virtual environment
+$ source venv/bin/activate  # activate the virtual environment
+```
+
+> **Note for Ubuntu/Debian**: You might need to install `python3-venv` first.
+
+> **Note for Ubuntu/Debian**: If you get `python: command not found` use
+> `python3` instead of just `python` on all commands below.
+
+
+#### 4. Install dependencies
+
+Dependencies for running Printrun are laid out in the [`requirements.txt`][5]
+file. Once activated your virtual environment, install required dependencies
+with:
+
+```
+(venv) $ python -m pip install -r requirements.txt  # install the rest of dependencies
+```
+
+> **Note for Linux users**: wxPython4 doesn't have Linux wheels available from
+> the Python Package Index yet. Before running the command above, find a
+> proper wheel for your distro at [extras.wxpython.org][6] and substitute the
+> link in the below example. You might skip this wheel installation, but that
+> results in compiling wxPython4 from source, which can be time and resource
+> consuming and might fail.
+> ```shell
+> (venv) $ python -m pip install https://extras.wxpython.org/wxPython4/extras/linux/gtk3/fedora-27/wxPython-4.0.1-cp36-cp36m-linux_x86_64.whl  # replace the link with yours
+> ```
+
+[5]: requirements.txt
+[6]: https://extras.wxpython.org/wxPython4/extras/linux/gtk3
+
+
+#### 5. (Optional) Cython-based G-Code parser
+
+Printrun default G-Code parser is quite memory hungry, but we also provide a
+much lighter one which just needs an extra build-time dependency (Cython). The
+warning message `WARNING:root:Memory-efficient GCoder implementation
+unavailable: No module named gcoder_line` means that this optimized G-Code
+parser hasn't been compiled. To get rid of it and benefit from the better
+implementation, install Cython and build the extension with the following
+commands:
+
+```console
+(venv) $ python -m pip install Cython
+(venv) $ python setup.py build_ext --inplace
+```
+
+
+#### 6. Run Printrun
+
+With your virtual environment still active, invoke the app you need like:
+
+```shell
+(venv) $ python pronterface.py  # or `pronsole.py` or `plater.py`
+```
+
 
 ### Windows
 
-Download the following, and install in this order:
+First download and install [GIT for Windows](https://git-scm.com/downloads), [Python 3.10](https://www.python.org/downloads/) and a [C-compiler environment](https://wiki.python.org/moin/WindowsCompilers/).
+For the next steps we need a CMD window or a PowerShell window. You can use Windows Terminal for this as well.
+Create and navigate to a directory of your choice where you want to download the source files of this repository and follow the next steps:
 
-  1. http://python.org/ftp/python/2.7.2/python-2.7.2.msi
-  2. http://pypi.python.org/packages/any/p/pyserial/pyserial-2.5.win32.exe
-  3. http://downloads.sourceforge.net/wxpython/wxPython2.8-win32-unicode-2.8.12.0-py27.exe
-  4. https://pypi.python.org/packages/any/p/pyreadline/pyreadline-1.7.1.win32.exe
-  5. http://pyglet.googlecode.com/files/pyglet-1.1.4.zip
+CMD
+```cmd
+> git clone https://github.com/kliment/Printrun.git
+> cd Printrun
+> git submodule update --init --recursive
+> release_windows.bat
+```
 
-For the last one, you will need to unpack it, open a command terminal, 
-go into the the directory you unpacked it in and run
-`python setup.py install`
+PowerShell:
+```ps
+> git clone https://github.com/kliment/Printrun.git
+> cd Printrun
+> git submodule update --init --recursive
+> ./release_windows.bat
+```
 
-### Mac OS X Lion
+The script above will clone this repository and the submodule PrintrunGTK3. The script 'release_windows.bat' will install a virtual environment named v3, download all needed python libraries and compile the binaries for Pronterface.exe and Pronsole.exe.
+You will find the files in the new created directory 'dist'. You will find further and more detailed information in the script release_windows.bat. Further information for the linked submodul: [PrintrunGTK3](https://github.com/DivingDuck/PrintrunGTK3)
+Run Pronterface or Pronsole from the binary files or from source calling pronterface.py for the GUI version and pronsole.py for the commandline version.
 
-  1. Ensure that the active Python is the system version. (`brew uninstall python` or other appropriate incantations)
-  2. Download an install [wxPython2.8-osx-unicode] matching to your python version (most likely 2.7 on Lion, 
-        check with: python --version) from: http://wxpython.org/download.php#stable
-  Known to work PythonWX: http://superb-sea2.dl.sourceforge.net/project/wxpython/wxPython/2.8.12.1/wxPython2.8-osx-unicode-2.8.12.1-universal-py2.7.dmg
-  3. Download and unpack pyserial from http://pypi.python.org/packages/source/p/pyserial/pyserial-2.5.tar.gz
-  4. In a terminal, change to the folder you unzipped to, then type in: `sudo python setup.py install`
-  5. Repeat 4. with http://http://pyglet.googlecode.com/files/pyglet-1.1.4.zip
+Run 'release_windows.bat' when ever you make changes or updates. With each new run it will compile the binaries and update all involved libraries in the virtual environment if needed. Delete the virtual environment if you have problems with it. Use 'git submodule update --init --recursive' for updating the submodule
 
-The tools will probably run just fine in 64bit on Lion, you don't need to mess
-with any of the 32bit settings. In case they don't, try 
-  5. export VERSIONER_PYTHON_PREFER_32_BIT=yes
-in a terminal before running Pronterface
-
-### Mac OS X (pre Lion)
-
-A precompiled version is available at http://koti.kapsi.fi/~kliment/printrun/
-
-  1. Download and install http://downloads.sourceforge.net/wxpython/wxPython2.8-osx-unicode-2.8.12.0-universal-py2.6.dmg
-  2. Grab the source for pyserial from http://pypi.python.org/packages/source/p/pyserial/pyserial-2.5.tar.gz
-  3. Unzip pyserial to a folder. Then, in a terminal, change to the folder you unzipped to, then type in:
-     
-     `defaults write com.apple.versioner.python Prefer-32-Bit -bool yes`
-     
-     `sudo python setup.py install`
-
-Alternatively, you can run python in 32 bit mode by setting the following environment variable before running the setup.py command:
-
-This alternative approach is confirmed to work on Mac OS X 10.6.8. 
-
-`export VERSIONER_PYTHON_PREFER_32_BIT=yes`
-
-`sudo python setup.py install`
-
-Then repeat the same with http://http://pyglet.googlecode.com/files/pyglet-1.1.4.zip
 
 # USING PRINTRUN
 
@@ -167,16 +254,20 @@ Load an STL (see the note on skeinforge below) or GCODE file, and you can upload
 The "monitor printer" function, when enabled, checks the printer state (temperatures, SD print progress) every 3 seconds.
 The command box recognizes all pronsole commands, but has no tabcompletion.
 
-If you want to load stl files, you need to install a slicing program such as Slic3r and add its path to the settings.
-See the Slic3r readme for more details on integration.
+If you want to load stl files, you need to install a slicing program such as Slic3r or Skeinforge and add its path to the settings.
 
+#### Slic3r integration
+
+To invoke Slic3r directly from Pronterface your slicing command (_Settings_ > _Options_ > _External Commands_ > _Slice Command_) should look something like `slic3r $s -o $o`. If Slic3r is properly installed "slic3r" will suffice, otherwise, replace it with the full path to Slic3r's executable.
+
+If the Slic3r integration option (_Settings_ > _Options_ > _User interface_ > _Enable Slic3r integration_) is checked a new menu will appear after application restart which will allow you to choose among your previously saved Slic3r Print/Filament/Printer settings.
 
 ## USING PRONSOLE
 
 To use pronsole, you need:
 
-  * python (ideally 2.6.x or 2.7.x),
-  * pyserial (or python-serial on ubuntu/debian) and
+  * Python 3 (ideally 3.10),
+  * pyserial (or python3-serial on ubuntu/debian) and
   * pyreadline (not needed on Linux)
 
 Start pronsole and you will be greeted with a command prompt. Type help to view the available commands.
@@ -187,7 +278,7 @@ The "skeinforge" folder must be in the same folder as pronsole.py
 
 ## USING PRINTCORE
 
-To use printcore you need python (ideally 2.6.x or 2.7.x) and pyserial (or python-serial on ubuntu/debian)
+To use printcore you need Python 3 (ideally 3.10) and pyserial (or python3-serial on ubuntu/debian)
 See pronsole for an example of a full-featured host, the bottom of printcore.py for a simple command-line
 sender, or the following code example:
 
@@ -195,9 +286,15 @@ sender, or the following code example:
 #to send a file of gcode to the printer
 from printrun.printcore import printcore
 from printrun import gcoder
-p=printcore('/dev/ttyUSB0',115200) # or p.printcore('COM3',115200) on Windows
+import time
+p=printcore('/dev/ttyUSB0', 115200) # or p.printcore('COM3',115200) on Windows
 gcode=[i.strip() for i in open('filename.gcode')] # or pass in your own array of gcode lines instead of reading from a file
 gcode = gcoder.LightGCode(gcode)
+
+# startprint silently exits if not connected yet
+while not p.online:
+  time.sleep(0.1)
+
 p.startprint(gcode) # this will start a print
 
 #If you need to interact with the printer:
@@ -232,10 +329,10 @@ on localhost port 7978, which provides print progress information.
 Here is a sample Python script querying the print status:
 
 ```python
-import xmlrpclib
+import xmlrpc.client
 
-rpc = xmlrpclib.ServerProxy('http://localhost:7978')
-print rpc.status()
+rpc = xmlrpc.client.ServerProxy('http://localhost:7978')
+print(rpc.status())
 ```
 
 ## CONFIGURATION
@@ -311,7 +408,7 @@ PC> macro move_down_by
 Enter macro using indented lines, end with empty line
 ..> G91
 ..> G1 Z-{0}
-..> G92
+..> G90
 ..>
 ```
 
@@ -325,7 +422,7 @@ For more powerful macro programming, it is possible to use python code escaping 
 Note that this python code invocation also works in interactive prompt:
 
 ```python
-PC> !print "Hello, printer!"
+PC> !print("Hello, printer!")
 Hello printer!
 
 PC> macro debug_on !self.p.loud = 1
@@ -346,14 +443,14 @@ Example: swapping two macros to implement toggle:
 PC> macro toggle_debug_on
 Enter macro using indented lines, end with empty line
 ..> !self.p.loud = 1
-..> !print "Diagnostic information ON"
+..> !print("Diagnostic information ON")
 ..> macro toggle_debug toggle_debug_off
 ..>
 Macro 'toggle_debug_on' defined
 PC> macro toggle_debug_off
 Enter macro using indented lines, end with empty line
 ..> !self.p.loud = 0
-..> !print "Diagnostic information OFF"
+..> !print("Diagnostic information OFF")
 ..> macro toggle_debug toggle_debug_on
 ..>
 Macro 'toggle_debug_off' defined
@@ -378,15 +475,15 @@ For example, following macro toggles the diagnostic information similarily to th
 ```python
 !if self.p.loud:
   !self.p.loud = 0
-  !print "Diagnostic information OFF"
+  !print("Diagnostic information OFF")
 !else:
   !self.p.loud = 1
-  !print "Diagnostic information ON"
+  !print("Diagnostic information ON")
 ```
 
 Macro parameters are available in '!'-escaped python code as locally defined list variable: arg[0] arg[1] ... arg[N]
 
-All python code is executed in the context of the pronsole (or PronterWindow) object, 
+All python code is executed in the context of the pronsole (or PronterWindow) object,
 so it is possible to use all internal variables and methods, which provide great deal of functionality.
 However the internal variables and methods are not very well documented and may be subject of change, as the program is developed.
 Therefore it is best to use pronsole commands, which easily contain majority of the functionality that might be needed.
@@ -394,7 +491,7 @@ Therefore it is best to use pronsole commands, which easily contain majority of 
 Some useful python-mode-only variables:
 
 ```python
-!self.settings - contains all settings, e.g. 
+!self.settings - contains all settings, e.g.
   port (!self.settings.port), baudrate, xy_feedrate, e_feedrate, slicecommand, final_command, build_dimensions
   You can set them also via pronsole command "set", but you can query the values only via python code.
 !self.p - printcore object (see USING PRINTCORE section for using printcore object)
@@ -405,7 +502,7 @@ Some useful python-mode-only variables:
 Some useful methods:
 
 ```python
-!self.onecmd - invokes raw command, e.g. 
+!self.onecmd - invokes raw command, e.g.
     !self.onecmd("move x 10")
     !self.onecmd("!print self.p.loud")
     !self.onecmd("button "+self.cur_button+" fanOFF /C cyan M107")
@@ -457,9 +554,75 @@ List of available commands:
 - `off`: turns off fans, motors, extruder, heatbed, power supply
 - `exit`
 
+
+# TESTING
+
+A small (work in progress) test suite is developed within folder `tests` using
+[unittest][8] which can be run with (requires Python 3.11+):
+
+```
+python -m unittest discover tests
+```
+
+Small utilities for testing/debugging communications or g-code reading/writing
+are also provided within folder `testtools`.
+
+
+[8]: https://docs.python.org/3/library/unittest
+
+
+# CONTRIBUTING
+
+Thinking of contributing to Printrun? Awesome! Thank you! ❤️
+
+Printrun is an open source project and we love to receive contributions from
+anyone. There are many ways to contribute:
+
+ * Improving the documentation. This README is our main source of
+   documentation and it surely lacks some love here and there or requires
+   being brought up to date.
+
+ * Submitting bug reports and feature requests.
+   - We use GitHub's [issue tracker][9] to keep track of them.
+   - Please remember to state your OS and Printrun version on new issues.
+
+ * Improving the test code base. Current code coverage is extremely low. See
+   [testing section](#testing) for more information.
+
+ * Fixing existing issues and/or implementing requested features. There is a
+   fair amount of known issues and a great deal of requested features waiting
+   to be implemented. We (the maintainers) don't have the time and resources
+   to look at them all so every code contribution will be very welcome.
+   - We use GitHub's [pull requests][10] to review and incorporate new code.
+   - Issues labeled [`Regression`][11] would be the most urgent fixes needed,
+     followed by issues/requests labeled [`2.x`][12] and lastly those with
+     [`3.x`][13].
+   - Ideally every new contribution should comply with [PEP 8][14] style guide
+     as much as possible and should be thoroughly documented to ease reviewing
+     and future understanding of the code.
+   - Please note that breaking changes might need to wait to be incorporated
+     until the next major release is due.
+
+
+[9]: https://github.com/kliment/Printrun/issues
+[10]: https://github.com/kliment/Printrun/pulls
+[14]: https://peps.python.org/pep-0008
+[11]: https://github.com/kliment/Printrun/labels/Regression
+[12]: https://github.com/kliment/Printrun/labels/2.x
+[13]: https://github.com/kliment/Printrun/labels/3.x
+
+
+# CONTRIBUTORS
+
+An enormous number of people helped make Printrun. See the list
+[here](CONTRIBUTORS.md).
+
+
 # LICENSE
 
 ```
+Copyright (C) 2011-2023 Kliment Yanev, Guillaume Seguin, and the other contributors listed in CONTRIBUTORS.md
+
 Printrun is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # This file is part of the Printrun suite.
 #
@@ -17,11 +17,6 @@
 
 import os
 
-# Set up Internationalization using gettext
-# searching for installed locales on /usr/share; uses relative folder if not found (windows)
-from .utils import install_locale
-install_locale('pronterface')
-
 import wx
 import time
 import logging
@@ -36,14 +31,19 @@ from copy import copy
 from printrun import stltool
 from printrun.objectplater import make_plater, PlaterPanel
 
-glview = False
-if "-nogl" not in sys.argv:
+from .utils import install_locale
+install_locale('pronterface')
+# Set up Internationalization using gettext
+# searching for installed locales on /usr/share; uses relative folder if not found (windows)
+
+glview = '--no-gl' not in sys.argv
+if glview:
     try:
         from printrun import stlview
-        glview = True
-    except:
-        logging.warning("Could not load 3D viewer for plater:"
-                        + "\n" + traceback.format_exc())
+    except ImportError:
+        glview = False
+        logging.warning(_("Could not load 3D viewer for plater:") +
+                        "\n" + traceback.format_exc())
 
 
 def evalme(s):
@@ -61,7 +61,7 @@ def transformation_matrix(model):
 
 class showstl(wx.Window):
     def __init__(self, parent, size, pos):
-        wx.Window.__init__(self, parent, size = size, pos = pos)
+        super().__init__(parent, size = size, pos = pos)
         self.i = 0
         self.parent = parent
         self.previ = 0
@@ -74,7 +74,7 @@ class showstl(wx.Window):
         self.prevsel = -1
 
     def prepare_model(self, m, scale):
-        m.bitmap = wx.EmptyBitmap(800, 800, 32)
+        m.bitmap = wx.Bitmap(800, 800, 32)
         dc = wx.MemoryDC()
         dc.SelectObject(m.bitmap)
         dc.SetBackground(wx.Brush((0, 0, 0, 0)))
@@ -105,7 +105,7 @@ class showstl(wx.Window):
     def move(self, event):
         if event.ButtonUp(wx.MOUSE_BTN_LEFT):
             if self.initpos is not None:
-                currentpos = event.GetPositionTuple()
+                currentpos = event.GetPosition()
                 delta = (0.5 * (currentpos[0] - self.initpos[0]),
                          -0.5 * (currentpos[1] - self.initpos[1])
                          )
@@ -116,17 +116,17 @@ class showstl(wx.Window):
             self.parent.right(event)
         elif event.Dragging():
             if self.initpos is None:
-                self.initpos = event.GetPositionTuple()
+                self.initpos = event.GetPosition()
             self.Refresh()
             dc = wx.ClientDC(self)
-            p = event.GetPositionTuple()
+            p = event.GetPosition()
             dc.DrawLine(self.initpos[0], self.initpos[1], p[0], p[1])
             del dc
         else:
             event.Skip()
 
     def rotate_shape(self, angle):
-        """rotates acive shape
+        """rotates active shape
         positive angle is clockwise
         """
         self.i += angle
@@ -135,7 +135,7 @@ class showstl(wx.Window):
             threading.Thread(target = self.cr).start()
 
     def keypress(self, event):
-        """gets keypress events and moves/rotates acive shape"""
+        """gets keypress events and moves/rotates active shape"""
         keycode = event.GetKeyCode()
         step = 5
         angle = 18
@@ -181,10 +181,7 @@ class showstl(wx.Window):
         if self.prevsel != s:
             self.i = 0
             self.prevsel = s
-        if z < 0:
-            self.rotate_shape(-1)
-        else:
-            self.rotate_shape(1)
+        self.rotate_shape(-1 if z < 0 else 1)
 
     def repaint(self, event):
         dc = wx.PaintDC(self)
@@ -195,11 +192,11 @@ class showstl(wx.Window):
             dc = wx.ClientDC(self)
         scale = 2
         dc.SetPen(wx.Pen(wx.Colour(100, 100, 100)))
-        for i in xrange(20):
+        for i in range(20):
             dc.DrawLine(0, i * scale * 10, 400, i * scale * 10)
             dc.DrawLine(i * scale * 10, 0, i * scale * 10, 400)
         dc.SetPen(wx.Pen(wx.Colour(0, 0, 0)))
-        for i in xrange(4):
+        for i in range(4):
             dc.DrawLine(0, i * scale * 50, 400, i * scale * 50)
             dc.DrawLine(i * scale * 50, 0, i * scale * 50, 400)
         dc.SetBrush(wx.Brush(wx.Colour(128, 255, 128)))
@@ -222,70 +219,51 @@ class StlPlaterPanel(PlaterPanel):
     save_wildcard = _("STL files (*.stl;*.STL)|*.stl;*.STL")
 
     def prepare_ui(self, filenames = [], callback = None,
-                   parent = None, build_dimensions = None, circular_platform = False,
-                   simarrange_path = None, antialias_samples = 0):
-        super(StlPlaterPanel, self).prepare_ui(filenames, callback, parent, build_dimensions)
+                   parent = None, build_dimensions = None,
+                   circular_platform = False,
+                   simarrange_path = None,
+                   antialias_samples = 0):
+        super().prepare_ui(filenames, callback, parent, build_dimensions, cutting_tool = True)
         self.cutting = False
         self.cutting_axis = None
         self.cutting_dist = None
         if glview:
-            viewer = stlview.StlViewPanel(self, (580, 580),
+            viewer = stlview.StlViewPanel(self, wx.DefaultSize,
                                           build_dimensions = self.build_dimensions,
                                           circular = circular_platform,
                                           antialias_samples = antialias_samples)
-            # Cutting tool
-            nrows = self.menusizer.GetRows()
-            self.menusizer.Add(wx.StaticText(self.menupanel, -1, _("Cut along:")),
-                               pos = (nrows, 0), span = (1, 1), flag = wx.ALIGN_CENTER)
-            cutconfirmbutton = wx.Button(self.menupanel, label = _("Confirm cut"))
-            cutconfirmbutton.Bind(wx.EVT_BUTTON, self.cut_confirm)
-            cutconfirmbutton.Disable()
-            self.cutconfirmbutton = cutconfirmbutton
-            self.menusizer.Add(cutconfirmbutton, pos = (nrows, 1), span = (1, 1), flag = wx.EXPAND)
-            cutpanel = wx.Panel(self.menupanel, -1)
-            cutsizer = self.cutsizer = wx.BoxSizer(wx.HORIZONTAL)
-            cutpanel.SetSizer(cutsizer)
-            cutxplusbutton = wx.ToggleButton(cutpanel, label = _(">X"), style = wx.BU_EXACTFIT)
-            cutxplusbutton.Bind(wx.EVT_TOGGLEBUTTON, lambda event: self.start_cutting_tool(event, "x", 1))
-            cutsizer.Add(cutxplusbutton, 1, flag = wx.EXPAND)
-            cutzplusbutton = wx.ToggleButton(cutpanel, label = _(">Y"), style = wx.BU_EXACTFIT)
-            cutzplusbutton.Bind(wx.EVT_TOGGLEBUTTON, lambda event: self.start_cutting_tool(event, "y", 1))
-            cutsizer.Add(cutzplusbutton, 1, flag = wx.EXPAND)
-            cutzplusbutton = wx.ToggleButton(cutpanel, label = _(">Z"), style = wx.BU_EXACTFIT)
-            cutzplusbutton.Bind(wx.EVT_TOGGLEBUTTON, lambda event: self.start_cutting_tool(event, "z", 1))
-            cutsizer.Add(cutzplusbutton, 1, flag = wx.EXPAND)
-            cutxminusbutton = wx.ToggleButton(cutpanel, label = _("<X"), style = wx.BU_EXACTFIT)
-            cutxminusbutton.Bind(wx.EVT_TOGGLEBUTTON, lambda event: self.start_cutting_tool(event, "x", -1))
-            cutsizer.Add(cutxminusbutton, 1, flag = wx.EXPAND)
-            cutzminusbutton = wx.ToggleButton(cutpanel, label = _("<Y"), style = wx.BU_EXACTFIT)
-            cutzminusbutton.Bind(wx.EVT_TOGGLEBUTTON, lambda event: self.start_cutting_tool(event, "y", -1))
-            cutsizer.Add(cutzminusbutton, 1, flag = wx.EXPAND)
-            cutzminusbutton = wx.ToggleButton(cutpanel, label = _("<Z"), style = wx.BU_EXACTFIT)
-            cutzminusbutton.Bind(wx.EVT_TOGGLEBUTTON, lambda event: self.start_cutting_tool(event, "z", -1))
-            cutsizer.Add(cutzminusbutton, 1, flag = wx.EXPAND)
-            self.menusizer.Add(cutpanel, pos = (nrows + 1, 0), span = (1, 2), flag = wx.EXPAND)
+
         else:
             viewer = showstl(self, (580, 580), (0, 0))
         self.simarrange_path = simarrange_path
         self.set_viewer(viewer)
+        self.enable_cut_button(False)
+        self.SetMinClientSize(self.topsizer.CalcMin())
 
     def start_cutting_tool(self, event, axis, direction):
-        toggle = event.GetEventObject()
-        if toggle.GetValue():
+        toggle = event.EventObject
+        self.cutting = toggle.Value
+        if toggle.Value:
             # Disable the other toggles
-            for child in self.cutsizer.GetChildren():
-                child = child.GetWindow()
-                if child != toggle:
-                    child.SetValue(False)
-            self.cutting = True
+            for button in self.cut_axis_buttons:
+                if button != toggle:
+                    button.Value = False
             self.cutting_axis = axis
-            self.cutting_dist = None
             self.cutting_direction = direction
         else:
-            self.cutting = False
             self.cutting_axis = None
-            self.cutting_dist = None
             self.cutting_direction = None
+            self.enable_cut_button(False)
+        self.cutting_dist = None
+
+    def end_cutting_tool(self):
+        self.cutting = False
+        self.cutting_dist = None
+        self.cutting_axis = None
+        self.cutting_direction = None
+        self.enable_cut_button(False)
+        for button in self.cut_axis_buttons:
+            button.SetValue(False)
 
     def cut_confirm(self, event):
         name = self.l.GetSelection()
@@ -293,7 +271,7 @@ class StlPlaterPanel(PlaterPanel):
         model = self.models[name]
         transformation = transformation_matrix(model)
         transformed = model.transform(transformation)
-        logging.info(_("Cutting %s alongside %s axis") % (name, self.cutting_axis))
+        logging.info(_("Cutting %s alongside %s axis") % (name, self.cutting_axis.upper()))
         axes = ["x", "y", "z"]
         cut = transformed.cut(axes.index(self.cutting_axis),
                               self.cutting_direction,
@@ -305,14 +283,13 @@ class StlPlaterPanel(PlaterPanel):
         cut.centeroffset = [0, 0, 0]
         self.s.prepare_model(cut, 2)
         self.models[name] = cut
-        self.cutconfirmbutton.Disable()
         self.cutting = False
         self.cutting_axis = None
         self.cutting_dist = None
         self.cutting_direction = None
-        for child in self.cutsizer.GetChildren():
-            child = child.GetWindow()
-            child.SetValue(False)
+        for button in self.cut_axis_buttons:
+            button.SetValue(False)
+        self.enable_cut_button(False)
 
     def clickcb(self, event, single = False):
         if not isinstance(self.s, stlview.StlViewPanel):
@@ -327,7 +304,7 @@ class StlPlaterPanel(PlaterPanel):
         self.cutting_dist, _, _ = self.s.get_cutting_plane(axis, None,
                                                            local_transform = True)
         if self.cutting_dist is not None:
-            self.cutconfirmbutton.Enable()
+            self.enable_cut_button(True)
 
     def clickcb_rebase(self, event):
         x, y = event.GetPosition()
@@ -335,7 +312,7 @@ class StlPlaterPanel(PlaterPanel):
         best_match = None
         best_facet = None
         best_dist = float("inf")
-        for key, model in self.models.iteritems():
+        for key, model in self.models.items():
             transformation = transformation_matrix(model)
             transformed = model.transform(transformation)
             if not transformed.intersect_box(ray_near, ray_far):
@@ -380,8 +357,8 @@ class StlPlaterPanel(PlaterPanel):
                                        _("Error:") + traceback.format_exc(),
                                        wx.OK)
                 dlg.ShowModal()
-                logging.error(_("Loading STL file failed:")
-                              + "\n" + traceback.format_exc())
+                logging.error(_("Loading STL file failed:") +
+                              "\n" + traceback.format_exc())
         elif filename.lower().endswith(".scad"):
             try:
                 self.load_scad(filename)
@@ -390,13 +367,12 @@ class StlPlaterPanel(PlaterPanel):
                                        _("Error:") + traceback.format_exc(),
                                        wx.OK)
                 dlg.ShowModal()
-                logging.error(_("Loading OpenSCAD file failed:")
-                              + "\n" + traceback.format_exc())
+                logging.error(_("Loading OpenSCAD file failed:") +
+                              "\n" + traceback.format_exc())
 
     def load_scad(self, name):
-        lf = open(name)
-        s = [i.replace("\n", "").replace("\r", "").replace(";", "") for i in lf if "stl" in i]
-        lf.close()
+        with open(name) as lf:
+            s = [i.replace("\n", "").replace("\r", "").replace(";", "") for i in lf if "stl" in i]
 
         for i in s:
             parts = i.split()
@@ -478,13 +454,13 @@ class StlPlaterPanel(PlaterPanel):
         if self.simarrange_path:
             try:
                 self.autoplate_simarrange()
-            except Exception, e:
+            except Exception as e:
                 logging.warning(_("Failed to use simarrange for plating, "
                                   "falling back to the standard method. "
                                   "The error was: ") + e)
-                super(StlPlaterPanel, self).autoplate()
+                super().autoplate()
         else:
-            super(StlPlaterPanel, self).autoplate()
+            super().autoplate()
 
     def autoplate_simarrange(self):
         logging.info(_("Autoplating using simarrange"))
@@ -494,7 +470,7 @@ class StlPlaterPanel(PlaterPanel):
                    "-m",  # Pack around center
                    "-x", str(int(self.build_dimensions[0])),
                    "-y", str(int(self.build_dimensions[1]))] + files
-        p = subprocess.Popen(command, stdout = subprocess.PIPE)
+        p = subprocess.Popen(command, stdout = subprocess.PIPE, universal_newlines = True)
 
         pos_regexp = re.compile("File: (.*) minx: ([0-9]+), miny: ([0-9]+), minrot: ([0-9]+)")
         for line in p.stdout:
@@ -510,7 +486,7 @@ class StlPlaterPanel(PlaterPanel):
                 x = float(bits[1])
                 y = float(bits[2])
                 rot = -float(bits[3])
-                for name, model in models.items():
+                for name, model in list(models.items()):
                     # FIXME: not sure this is going to work superwell with utf8
                     if model.filename == filename:
                         model.offsets[0] = x + self.build_dimensions[3]
@@ -520,5 +496,6 @@ class StlPlaterPanel(PlaterPanel):
                         break
         if p.wait() != 0:
             raise RuntimeError(_("simarrange failed"))
+
 
 StlPlater = make_plater(StlPlaterPanel)

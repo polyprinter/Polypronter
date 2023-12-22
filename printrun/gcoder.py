@@ -1,12 +1,13 @@
-#!/usr/bin/env python
-# This file is copied from GCoder.
+#!/usr/bin/env python3
 #
-# GCoder is free software: you can redistribute it and/or modify
+# This file is part of the Printrun suite.
+#
+# Printrun is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# GCoder is distributed in the hope that it will be useful,
+# Printrun is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
@@ -22,15 +23,15 @@ import logging
 from array import array
 
 gcode_parsed_args = ["x", "y", "e", "f", "z", "i", "j"]
-gcode_parsed_nonargs = ["g", "t", "m", "n"]
-to_parse = "".join(gcode_parsed_args + gcode_parsed_nonargs)
-gcode_exp = re.compile("\([^\(\)]*\)|;.*|[/\*].*\n|([%s])([-+]?[0-9]*\.?[0-9]*)" % to_parse)
+gcode_parsed_nonargs = 'gtmnd'
+to_parse = "".join(gcode_parsed_args) + gcode_parsed_nonargs
+gcode_exp = re.compile("\([^\(\)]*\)|;.*|[/\*].*\n|([%s])\s*([-+]?[0-9]*\.?[0-9]*)" % to_parse)
 gcode_strip_comment_exp = re.compile("\([^\(\)]*\)|;.*|[/\*].*\n")
 m114_exp = re.compile("\([^\(\)]*\)|[/\*].*\n|([XYZ]):?([-+]?[0-9]*\.?[0-9]*)")
 specific_exp = "(?:\([^\(\)]*\))|(?:;.*)|(?:[/\*].*\n)|(%s[-+]?[0-9]*\.?[0-9]*)"
 move_gcodes = ["G0", "G1", "G2", "G3"]
 
-class PyLine(object):
+class PyLine:
 
     __slots__ = ('x', 'y', 'z', 'e', 'f', 'i', 'j',
                  'raw', 'command', 'is_move',
@@ -45,7 +46,7 @@ class PyLine(object):
     def __getattr__(self, name):
         return None
 
-class PyLightLine(object):
+class PyLightLine:
 
     __slots__ = ('raw', 'command')
 
@@ -56,10 +57,10 @@ class PyLightLine(object):
         return None
 
 try:
-    import gcoder_line
+    from . import gcoder_line
     Line = gcoder_line.GLine
     LightLine = gcoder_line.GLightLine
-except Exception, e:
+except Exception as e:
     logging.warning("Memory-efficient GCoder implementation unavailable: %s" % e)
     Line = PyLine
     LightLine = PyLightLine
@@ -107,8 +108,9 @@ class Layer(list):
     def __init__(self, lines, z = None):
         super(Layer, self).__init__(lines)
         self.z = z
+        self.duration = 0
 
-class GCode(object):
+class GCode:
 
     line_class = Line
 
@@ -121,6 +123,7 @@ class GCode(object):
     append_layer_id = None
 
     imperial = False
+    cutting = False
     relative = False
     relative_e = False
     current_tool = 0
@@ -217,7 +220,9 @@ class GCode(object):
     layers_count = property(_get_layers_count)
 
     def __init__(self, data = None, home_pos = None,
-                 layer_callback = None, deferred = False):
+                 layer_callback = None, deferred = False,
+                 cutting_as_extrusion = False):
+        self.cutting_as_extrusion = cutting_as_extrusion
         if not deferred:
             self.prepare(data, home_pos, layer_callback)
 
@@ -240,6 +245,8 @@ class GCode(object):
             self.layer_idxs = array('I', [])
             self.line_idxs = array('I', [])
 
+    def has_index(self, i):
+        return i < len(self)
     def __len__(self):
         return len(self.line_idxs)
 
@@ -305,8 +312,27 @@ class GCode(object):
         return commands[::-1]
 
     def append(self, command, store = True):
+        '''Add a G-code command to the list
+
+        Parameters
+        ----------
+        command : str
+            Command to be added, e.g. "G1 X10".
+        store : bool, default: True
+            If True, `command` is appended to the current list of
+            commands. If False, processed command is returned but not
+            added to the list.
+
+        Returns
+        -------
+        Line
+            A `printrun.gcoder.Line` object containing the processed
+            `command`.
+
+        '''
         command = command.strip()
         if not command:
+            # TODO: return None or empty gline? Pylint #R1710
             return
         gline = Line(command)
         self._preprocess([gline])
@@ -314,7 +340,7 @@ class GCode(object):
             self.lines.append(gline)
             self.append_layer.append(gline)
             self.layer_idxs.append(self.append_layer_id)
-            self.line_idxs.append(len(self.append_layer))
+            self.line_idxs.append(len(self.append_layer)-1)
         return gline
 
     def _preprocess(self, lines = None, build_layers = False,
@@ -338,6 +364,7 @@ class GCode(object):
         offset_e = self.offset_e
         total_e = self.total_e
         max_e = self.max_e
+        cutting = self.cutting
 
         current_e_multi = self.current_e_multi[current_tool]
         offset_e_multi = self.offset_e_multi[current_tool]
@@ -367,7 +394,8 @@ class GCode(object):
             # get device caps from firmware: max speed, acceleration/axis
             # (including extruder)
             # calculate the maximum move duration accounting for above ;)
-            lastx = lasty = lastz = laste = lastf = 0.0
+            lastx = lasty = lastz = None
+            laste = lastf = 0
             lastdx = 0
             lastdy = 0
             x = y = e = f = 0.0
@@ -383,14 +411,41 @@ class GCode(object):
             layer_idxs = self.layer_idxs = []
             line_idxs = self.line_idxs = []
 
-            layer_id = 0
-            layer_line = 0
 
             last_layer_z = None
             prev_z = None
-            prev_base_z = (None, None)
             cur_z = None
             cur_lines = []
+
+            def append_lines(lines, isEnd):
+                if not build_layers:
+                    return
+                nonlocal layerbeginduration, last_layer_z
+                if cur_layer_has_extrusion and prev_z != last_layer_z \
+                        or not all_layers:
+                    layer = Layer([], prev_z)
+                    last_layer_z = prev_z
+                    finished_layer = len(all_layers)-1 if all_layers else None
+                    all_layers.append(layer)
+                    all_zs.add(prev_z)
+                else:
+                    layer = all_layers[-1]
+                    finished_layer = None
+                layer_id = len(all_layers)-1
+                layer_line = len(layer)
+                for i, ln in enumerate(lines):
+                    layer.append(ln)
+                    layer_idxs.append(layer_id)
+                    line_idxs.append(layer_line+i)
+                layer.duration += totalduration - layerbeginduration
+                layerbeginduration = totalduration
+                if layer_callback:
+                    # we finish a layer when inserting the next
+                    if finished_layer is not None:
+                        layer_callback(self, finished_layer)
+                    # notify about end layer, there will not be next
+                    if isEnd:
+                        layer_callback(self, layer_id)
 
         if self.line_class != Line:
             get_line = lambda l: Line(l.raw)
@@ -422,12 +477,20 @@ class GCode(object):
                 elif line.command == "M83":
                     relative_e = True
                 elif line.command[0] == "T":
-                    current_tool = int(line.command[1:])
-                    while(current_tool+1>len(self.current_e_multi)):
+                    try:
+                        current_tool = int(line.command[1:])
+                    except:
+                        pass #handle T? by treating it as no tool change
+                    while current_tool+1 > len(self.current_e_multi):
                         self.current_e_multi+=[0]
                         self.offset_e_multi+=[0]
                         self.total_e_multi+=[0]
                         self.max_e_multi+=[0]
+                elif line.command == "M3" or line.command == "M4":
+                    cutting = True
+                elif line.command == "M5":
+                    cutting = False
+
                 current_e_multi = self.current_e_multi[current_tool]
                 offset_e_multi = self.offset_e_multi[current_tool]
                 total_e_multi = self.total_e_multi[current_tool]
@@ -500,10 +563,12 @@ class GCode(object):
 
                         max_e = max(max_e, total_e)
                         max_e_multi=max(max_e_multi, total_e_multi)
-                        cur_layer_has_extrusion |= line.extruding
+                        cur_layer_has_extrusion |= line.extruding and (line.x is not None or line.y is not None)
                     elif line.command == "G92":
                         offset_e = current_e - line.e
                         offset_e_multi = current_e_multi - line.e
+                if cutting and self.cutting_as_extrusion:
+                    line.extruding = True
 
                 self.current_e_multi[current_tool]=current_e_multi
                 self.offset_e_multi[current_tool]=offset_e_multi
@@ -516,11 +581,12 @@ class GCode(object):
                     if line.is_move:
                         if line.extruding:
                             if line.current_x is not None:
-                                xmin_e = min(xmin_e, line.current_x)
-                                xmax_e = max(xmax_e, line.current_x)
+                                # G0 X10 ; G1 X20 E5 results in 10..20 even as G0 is not extruding
+                                xmin_e = min(xmin_e, line.current_x, xmin_e if lastx is None else lastx)
+                                xmax_e = max(xmax_e, line.current_x, xmax_e if lastx is None else lastx)
                             if line.current_y is not None:
-                                ymin_e = min(ymin_e, line.current_y)
-                                ymax_e = max(ymax_e, line.current_y)
+                                ymin_e = min(ymin_e, line.current_y, ymin_e if lasty is None else lasty)
+                                ymax_e = max(ymax_e, line.current_y, ymax_e if lasty is None else lasty)
                         if max_e <= 0:
                             if line.current_x is not None:
                                 xmin = min(xmin, line.current_x)
@@ -531,9 +597,9 @@ class GCode(object):
 
                     # Compute duration
                     if line.command == "G0" or line.command == "G1":
-                        x = line.x if line.x is not None else lastx
-                        y = line.y if line.y is not None else lasty
-                        z = line.z if line.z is not None else lastz
+                        x = line.x if line.x is not None else (lastx or 0)
+                        y = line.y if line.y is not None else (lasty or 0)
+                        z = line.z if line.z is not None else (lastz or 0)
                         e = line.e if line.e is not None else laste
                         # mm/s vs mm/m => divide by 60
                         f = line.f / 60.0 if line.f is not None else lastf
@@ -553,15 +619,15 @@ class GCode(object):
                         # The following code tries to fix it by forcing a full
                         # reacceleration if this move is in the opposite direction
                         # of the previous one
-                        dx = x - lastx
-                        dy = y - lasty
+                        dx = x - (lastx or 0)
+                        dy = y - (lasty or 0)
                         if dx * lastdx + dy * lastdy <= 0:
                             lastf = 0
 
                         currenttravel = math.hypot(dx, dy)
                         if currenttravel == 0:
                             if line.z is not None:
-                                currenttravel = abs(line.z) if line.relative else abs(line.z - lastz)
+                                currenttravel = abs(line.z) if line.relative else abs(line.z - (lastz or 0))
                             elif line.e is not None:
                                 currenttravel = abs(line.e) if line.relative_e else abs(line.e - laste)
                         # Feedrate hasn't changed, no acceleration/decceleration planned
@@ -606,47 +672,13 @@ class GCode(object):
                             else:
                                 cur_z = line.z
 
-                    # FIXME: the logic behind this code seems to work, but it might be
-                    # broken
-                    if cur_z != prev_z:
-                        if prev_z is not None and last_layer_z is not None:
-                            offset = self.est_layer_height if self.est_layer_height else 0.01
-                            if abs(prev_z - last_layer_z) < offset:
-                                if self.est_layer_height is None:
-                                    zs = sorted([l.z for l in all_layers if l.z is not None])
-                                    heights = [round(zs[i + 1] - zs[i], 3) for i in range(len(zs) - 1)]
-                                    heights = [height for height in heights if height]
-                                    if len(heights) >= 2: self.est_layer_height = heights[1]
-                                    elif heights: self.est_layer_height = heights[0]
-                                    else: self.est_layer_height = 0.1
-                                base_z = round(prev_z - (prev_z % self.est_layer_height), 2)
-                            else:
-                                base_z = round(prev_z, 2)
-                        else:
-                            base_z = prev_z
-
-                        if base_z != prev_base_z:
-                            new_layer = Layer(cur_lines, base_z)
-                            new_layer.duration = totalduration - layerbeginduration
-                            layerbeginduration = totalduration
-                            all_layers.append(new_layer)
-                            if cur_layer_has_extrusion and prev_z not in all_zs:
-                                all_zs.add(prev_z)
-                            cur_lines = []
-                            cur_layer_has_extrusion = False
-                            layer_id += 1
-                            layer_line = 0
-                            last_layer_z = base_z
-                            if layer_callback is not None:
-                                layer_callback(self, len(all_layers) - 1)
-
-                        prev_base_z = base_z
+                    if cur_z != prev_z and cur_layer_has_extrusion:
+                        append_lines(cur_lines, False)
+                        cur_lines = []
+                        cur_layer_has_extrusion = False
 
             if build_layers:
                 cur_lines.append(true_line)
-                layer_idxs.append(layer_id)
-                line_idxs.append(layer_line)
-                layer_line += 1
                 prev_z = cur_z
             # ## Loop done
 
@@ -669,17 +701,13 @@ class GCode(object):
         self.offset_e_multi[current_tool]=offset_e_multi
         self.max_e_multi[current_tool]=max_e_multi
         self.total_e_multi[current_tool]=total_e_multi
+        self.cutting = cutting
 
 
         # Finalize layers
         if build_layers:
             if cur_lines:
-                new_layer = Layer(cur_lines, prev_z)
-                new_layer.duration = totalduration - layerbeginduration
-                layerbeginduration = totalduration
-                all_layers.append(new_layer)
-                if cur_layer_has_extrusion and prev_z not in all_zs:
-                    all_zs.add(prev_z)
+                append_lines(cur_lines, True)
 
             self.append_layer_id = len(all_layers)
             self.append_layer = Layer([])
@@ -689,7 +717,7 @@ class GCode(object):
             self.line_idxs = array('I', line_idxs)
 
             # Compute bounding box
-            all_zs = self.all_zs.union(set([zmin])).difference(set([None]))
+            all_zs = self.all_zs.union({zmin}).difference({None})
             zmin = min(all_zs)
             zmax = max(all_zs)
 
@@ -731,25 +759,25 @@ class LightGCode(GCode):
 
 def main():
     if len(sys.argv) < 2:
-        print "usage: %s filename.gcode" % sys.argv[0]
+        print("usage: %s filename.gcode" % sys.argv[0])
         return
 
-    print "Line object size:", sys.getsizeof(Line("G0 X0"))
-    print "Light line object size:", sys.getsizeof(LightLine("G0 X0"))
+    print("Line object size:", sys.getsizeof(Line("G0 X0")))
+    print("Light line object size:", sys.getsizeof(LightLine("G0 X0")))
     gcode = GCode(open(sys.argv[1], "rU"))
 
-    print "Dimensions:"
+    print("Dimensions:")
     xdims = (gcode.xmin, gcode.xmax, gcode.width)
-    print "\tX: %0.02f - %0.02f (%0.02f)" % xdims
+    print("\tX: %0.02f - %0.02f (%0.02f)" % xdims)
     ydims = (gcode.ymin, gcode.ymax, gcode.depth)
-    print "\tY: %0.02f - %0.02f (%0.02f)" % ydims
+    print("\tY: %0.02f - %0.02f (%0.02f)" % ydims)
     zdims = (gcode.zmin, gcode.zmax, gcode.height)
-    print "\tZ: %0.02f - %0.02f (%0.02f)" % zdims
-    print "Filament used: %0.02fmm" % gcode.filament_length
+    print("\tZ: %0.02f - %0.02f (%0.02f)" % zdims)
+    print("Filament used: %0.02fmm" % gcode.filament_length)
     for i in enumerate(gcode.filament_length_multi):
-        print "E%d %0.02fmm" % (i[0],i[1])
-    print "Number of layers: %d" % gcode.layers_count
-    print "Estimated duration: %s" % gcode.estimate_duration()[1]
+        print("E%d %0.02fmm" % (i[0],i[1]))
+    print("Number of layers: %d" % gcode.layers_count)
+    print("Estimated duration: %s" % gcode.estimate_duration()[1])
 
 if __name__ == '__main__':
     main()

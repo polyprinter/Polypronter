@@ -1,11 +1,13 @@
-# This file is copied from GCoder.
+#cython: language_level=3
 #
-# GCoder is free software: you can redistribute it and/or modify
+# This file is part of the Printrun suite.
+#
+# Printrun is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# GCoder is distributed in the hope that it will be useful,
+# Printrun is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
@@ -18,6 +20,7 @@ from libc.stdint cimport uint8_t, uint32_t
 from libc.string cimport strlen, strncpy
 
 cdef char* copy_string(object value):
+    value = value.encode('utf-8')
     cdef char* orig = value
     str_len = len(orig)
     cdef char* array = <char *>malloc(str_len + 1)
@@ -192,7 +195,7 @@ cdef class GLine:
             self._status = set_has_var(self._status, pos_gcview_end_vertex)
     property raw:
         def __get__(self):
-            if has_var(self._status, pos_raw): return self._raw
+            if has_var(self._status, pos_raw): return self._raw.decode('utf-8')
             else: return None
         def __set__(self, value):
             # WARNING: memory leak could happen here, as we don't do the following :
@@ -201,7 +204,7 @@ cdef class GLine:
             self._status = set_has_var(self._status, pos_raw)
     property command:
         def __get__(self):
-            if has_var(self._status, pos_command): return self._command
+            if has_var(self._status, pos_command): return self._command.decode('utf-8')
             else: return None
         def __set__(self, value):
             # WARNING: memory leak could happen here, as we don't do the following :
@@ -231,7 +234,7 @@ cdef class GLightLine:
 
     property raw:
         def __get__(self):
-            if has_var(self._status, pos_raw): return self._raw
+            if has_var(self._status, pos_raw): return self._raw.decode('utf-8')
             else: return None
         def __set__(self, value):
             # WARNING: memory leak could happen here, as we don't do the following :
@@ -240,7 +243,7 @@ cdef class GLightLine:
             self._status = set_has_var(self._status, pos_raw)
     property command:
         def __get__(self):
-            if has_var(self._status, pos_command): return self._command
+            if has_var(self._status, pos_command): return self._command.decode('utf-8')
             else: return None
         def __set__(self, value):
             # WARNING: memory leak could happen here, as we don't do the following :

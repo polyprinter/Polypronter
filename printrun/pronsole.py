@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # This file is part of the Printrun suite.
 #
 # Printrun is free software: you can redistribute it and/or modify
@@ -18,6 +16,7 @@
 import cmd
 import glob
 import os
+import platform
 import time
 import threading
 import sys
@@ -30,6 +29,7 @@ import logging
 import traceback
 import re
 
+from appdirs import user_cache_dir, user_config_dir, user_data_dir
 from serial import SerialException
 
 from . import printcore
@@ -42,30 +42,31 @@ from .settings import Settings, BuildDimensionsSetting
 from .power import powerset_print_start, powerset_print_stop
 from printrun import gcoder
 from .rpc import ProntRPC
+from printrun.spoolmanager import spoolmanager
 
 if os.name == "nt":
     try:
-        import _winreg
+        import winreg
     except:
         pass
+
 READLINE = True
 try:
     import readline
-    try:
-        readline.rl.mode.show_all_if_ambiguous = "on"  # config pyreadline on windows
-    except:
-        pass
-except:
+    if os.name == "nt":   # config pyreadline on Windows
+        readline.rl.mode.show_all_if_ambiguous = "on"
+except ImportError:
     READLINE = False  # neither readline module is available
 
-tempreading_exp = re.compile("(^T:| T:)")
+tempreading_exp = re.compile('\\bT\d*:')
 
 REPORT_NONE = 0
 REPORT_POS = 1
 REPORT_TEMP = 2
 REPORT_MANUAL = 4
+DEG = "\N{DEGREE SIGN}"
 
-class Status(object):
+class Status:
 
     def __init__(self):
         self.extruder_temp = 0
@@ -102,6 +103,37 @@ class Status(object):
     def extruder_enabled(self):
         return self.extruder_temp != 0
 
+class RGSGCoder():
+    """Bare alternative to gcoder.LightGCode which does not preload all lines in memory,
+but still allows run_gcode_script (hence the RGS) to be processed by do_print (checksum,threading,ok waiting)"""
+    def __init__(self, line):
+        self.lines = True
+        self.filament_length = 0.
+        self.filament_length_multi = [0]
+        self.proc = run_command(line, {"$s": 'str(self.filename)'}, stdout = subprocess.PIPE, universal_newlines = True)
+        lr = gcoder.Layer([])
+        lr.duration = 0.
+        self.all_layers = [lr]
+        self.read() #empty layer causes division by zero during progress calculation
+    def read(self):
+        ln = self.proc.stdout.readline()
+        if not ln:
+            self.proc.stdout.close()
+            return None
+        ln = ln.strip()
+        if not ln:
+            return None
+        pyLn = gcoder.PyLightLine(ln)
+        self.all_layers[0].append(pyLn)
+        return pyLn
+    def has_index(self, i):
+        while i >= len(self.all_layers[0]) and not self.proc.stdout.closed:
+            self.read()
+        return i < len(self.all_layers[0])
+    def __len__(self):
+        return len(self.all_layers[0])
+    def idxs(self, i):
+        return 0, i #layer, line
 
 class pronsole(cmd.Cmd):
     def __init__(self):
@@ -134,8 +166,8 @@ class pronsole(cmd.Cmd):
         self.paused = False
         self.sdprinting = 0
         self.uploading = 0  # Unused, just for pronterface generalization
-        self.temps = {"pla": "185", "abs": "230", "off": "0"}
-        self.bedtemps = {"pla": "60", "abs": "110", "off": "0"}
+        self.temps = {"PLA": "185", "ABS": "230", "Off": "0"}
+        self.bedtemps = {"PLA": "60", "ABS": "110", "Off": "0"}
         self.percentdone = 0
         self.posreport = ""
         self.tempreadings = ""
@@ -143,28 +175,30 @@ class pronsole(cmd.Cmd):
         self.userm105 = 0
         self.m105_waitcycles = 0
         self.macros = {}
-        self.history_file = "~/.pronsole-history"
         self.rc_loaded = False
         self.processing_rc = False
         self.processing_args = False
         self.settings = Settings(self)
-        self.settings._add(BuildDimensionsSetting("build_dimensions", "200x200x100+0+0+0+0+0+0", _("Build dimensions"), _("Dimensions of Build Platform\n & optional offset of origin\n & optional switch position\n\nExamples:\n   XXXxYYY\n   XXX,YYY,ZZZ\n   XXXxYYYxZZZ+OffX+OffY+OffZ\nXXXxYYYxZZZ+OffX+OffY+OffZ+HomeX+HomeY+HomeZ"), "Printer"), self.update_build_dimensions)
+        self.settings._add(BuildDimensionsSetting("build_dimensions", "200x200x100+0+0+0+0+0+0", _("Build Dimensions:"), _("Dimensions of Build Platform\n & optional offset of origin\n & optional switch position\n\nExamples:\n   XXXxYYY\n   XXX,YYY,ZZZ\n   XXXxYYYxZZZ+OffX+OffY+OffZ\nXXXxYYYxZZZ+OffX+OffY+OffZ+HomeX+HomeY+HomeZ"), "Printer"), self.update_build_dimensions)
         self.settings._port_list = self.scanserial
-        self.settings._temperature_abs_cb = self.set_temp_preset
-        self.settings._temperature_pla_cb = self.set_temp_preset
-        self.settings._bedtemp_abs_cb = self.set_temp_preset
-        self.settings._bedtemp_pla_cb = self.set_temp_preset
         self.update_build_dimensions(None, self.settings.build_dimensions)
         self.update_tcp_streaming_mode(None, self.settings.tcp_streaming_mode)
         self.monitoring = 0
         self.starttime = 0
         self.extra_print_time = 0
         self.silent = False
-        self.commandprefixes = 'MGT$'
+        self.commandprefixes = 'MGTD$'
         self.promptstrs = {"offline": "%(bold)soffline>%(normal)s ",
-                           "fallback": "%(bold)sPC>%(normal)s ",
+                           "fallback": "%(bold)s%(red)s%(port)s%(white)s PC>%(normal)s ",
                            "macro": "%(bold)s..>%(normal)s ",
-                           "online": "%(bold)sT:%(extruder_temp_fancy)s%(progress_fancy)s>%(normal)s "}
+                           "online": "%(bold)s%(green)s%(port)s%(white)s %(extruder_temp_fancy)s%(progress_fancy)s>%(normal)s "}
+        self.spool_manager = spoolmanager.SpoolManager(self)
+        self.current_tool = 0   # Keep track of the extruder being used
+        self.cache_dir = os.path.join(user_cache_dir("Printrun"))
+        self.history_file = os.path.join(self.cache_dir,"history")
+        self.config_dir = os.path.join(user_config_dir("Printrun"))
+        self.data_dir = os.path.join(user_data_dir("Printrun"))
+        self.lineignorepattern=re.compile("ok ?\d*$|.*busy: ?processing|.*busy: ?heating|.*Active Extruder: ?\d*$")
 
     #  --------------------------------------------------------------
     #  General console handling
@@ -191,16 +225,16 @@ class pronsole(cmd.Cmd):
 
         self.preloop()
         if self.use_rawinput and self.completekey:
-            try:
-                import readline
-                self.old_completer = readline.get_completer()
-                readline.set_completer(self.complete)
-                readline.parse_and_bind(self.completekey + ": complete")
-                history = os.path.expanduser(self.history_file)
-                if os.path.exists(history):
-                    readline.read_history_file(history)
-            except ImportError:
-                pass
+            self.old_completer = readline.get_completer()
+            readline.set_completer(self.complete)
+            readline.parse_and_bind(self.completekey + ": complete")
+            history = (self.history_file)
+            if not os.path.exists(history):
+                if not os.path.exists(self.cache_dir):
+                    os.makedirs(self.cache_dir)
+                history = os.path.join(self.cache_dir, "history")
+            if os.path.exists(history):
+                readline.read_history_file(history)
         try:
             if intro is not None:
                 self.intro = intro
@@ -213,7 +247,7 @@ class pronsole(cmd.Cmd):
                 else:
                     if self.use_rawinput:
                         try:
-                            line = raw_input(self.prompt)
+                            line = input(self.prompt)
                         except EOFError:
                             self.log("")
                             self.do_exit("")
@@ -234,15 +268,11 @@ class pronsole(cmd.Cmd):
             self.postloop()
         finally:
             if self.use_rawinput and self.completekey:
-                try:
-                    import readline
-                    readline.set_completer(self.old_completer)
-                    readline.write_history_file(history)
-                except ImportError:
-                    pass
+                readline.set_completer(self.old_completer)
+                readline.write_history_file(self.history_file)
 
     def confirm(self):
-        y_or_n = raw_input("y/n: ")
+        y_or_n = input("y/n: ")
         if y_or_n == "y":
             return True
         elif y_or_n != "n":
@@ -250,11 +280,11 @@ class pronsole(cmd.Cmd):
         return False
 
     def log(self, *msg):
-        msg = u"".join(unicode(i) for i in msg)
+        msg = "".join(str(i) for i in msg)
         logging.info(msg)
 
     def logError(self, *msg):
-        msg = u"".join(unicode(i) for i in msg)
+        msg = "".join(str(i) for i in msg)
         logging.error(msg)
         if not self.settings.error_command:
             return
@@ -279,10 +309,12 @@ class pronsole(cmd.Cmd):
             specials = {}
             specials["extruder_temp"] = str(int(self.status.extruder_temp))
             specials["extruder_temp_target"] = str(int(self.status.extruder_temp_target))
+            # port: /dev/tty* | netaddress:port
+            specials["port"] = self.settings.port.replace('/dev/', '')
             if self.status.extruder_temp_target == 0:
-                specials["extruder_temp_fancy"] = str(int(self.status.extruder_temp))
+                specials["extruder_temp_fancy"] = str(int(self.status.extruder_temp)) + DEG
             else:
-                specials["extruder_temp_fancy"] = "%s/%s" % (str(int(self.status.extruder_temp)), str(int(self.status.extruder_temp_target)))
+                specials["extruder_temp_fancy"] = "%s%s/%s%s" % (str(int(self.status.extruder_temp)), DEG, str(int(self.status.extruder_temp_target)), DEG)
             if self.p.printing:
                 progress = int(1000 * float(self.p.queueindex) / len(self.p.mainqueue)) / 10
             elif self.sdprinting:
@@ -294,6 +326,9 @@ class pronsole(cmd.Cmd):
                 specials["progress_fancy"] = " " + str(progress) + "%"
             else:
                 specials["progress_fancy"] = ""
+            specials["red"] = "\033[31m"
+            specials["green"] = "\033[32m"
+            specials["white"] = "\033[37m"
             specials["bold"] = "\033[01m"
             specials["normal"] = "\033[00m"
             return promptstr % specials
@@ -376,7 +411,7 @@ class pronsole(cmd.Cmd):
                 self.log("Setting bed temp to 0")
             self.p.send_now("M140 S0.0")
         self.log("Disconnecting from printer...")
-        if self.p.printing:
+        if self.p.printing and l != "force":
             self.log(_("Are you sure you want to exit while printing?\n\
 (this will terminate the print)."))
             if not self.confirm():
@@ -453,6 +488,7 @@ class pronsole(cmd.Cmd):
             self.logError("Empty macro - cancelled")
             return
         macro = None
+        namespace={}
         pycode = "def macro(self,*arg):\n"
         if "\n" not in macro_def.strip():
             pycode += self.compile_macro_line("  " + macro_def.strip())
@@ -460,7 +496,11 @@ class pronsole(cmd.Cmd):
             lines = macro_def.split("\n")
             for l in lines:
                 pycode += self.compile_macro_line(l)
-        exec pycode
+        exec(pycode,namespace)
+        try:
+            macro=namespace['macro']
+        except:
+            pass
         return macro
 
     def start_macro(self, macro_name, prev_definition = "", suppress_instructions = False):
@@ -484,7 +524,7 @@ class pronsole(cmd.Cmd):
 
     def do_macro(self, args):
         if args.strip() == "":
-            self.print_topics("User-defined macros", map(str, self.macros.keys()), 15, 80)
+            self.print_topics("User-defined macros", [str(k) for k in self.macros.keys()], 15, 80)
             return
         arglist = args.split(None, 1)
         macro_name = arglist[0]
@@ -540,7 +580,7 @@ class pronsole(cmd.Cmd):
                 self.save_in_rc("set " + var, "set %s %s" % (var, value))
         except AttributeError:
             logging.debug(_("Unknown variable '%s'") % var)
-        except ValueError, ve:
+        except ValueError as ve:
             if hasattr(ve, "from_validator"):
                 self.logError(_("Bad value %s for variable '%s': %s") % (str, var, ve.args[0]))
             else:
@@ -582,6 +622,7 @@ class pronsole(cmd.Cmd):
             self.rc_filename = os.path.abspath(rc_filename)
             for rc_cmd in rc:
                 if not rc_cmd.lstrip().startswith("#"):
+                    logging.debug(rc_cmd.rstrip())
                     self.onecmd(rc_cmd)
             rc.close()
             if hasattr(self, "cur_macro_def"):
@@ -590,17 +631,33 @@ class pronsole(cmd.Cmd):
         finally:
             self.processing_rc = False
 
-    def load_default_rc(self, rc_filename = ".pronsolerc"):
-        if rc_filename == ".pronsolerc" and hasattr(sys, "frozen") and sys.frozen in ["windows_exe", "console_exe"]:
-            rc_filename = "printrunconf.ini"
+    def load_default_rc(self):
+        # Check if a configuration file exists in an "old" location,
+        # if not, use the "new" location provided by appdirs
+        for f in '~/.pronsolerc', '~/printrunconf.ini':
+            expanded = os.path.expanduser(f)
+            if os.path.exists(expanded):
+                config = expanded
+                break
+        else:
+            if not os.path.exists(self.config_dir):
+                os.makedirs(self.config_dir)
+
+            config_name = ('printrunconf.ini'
+                            if platform.system() == 'Windows'
+                            else 'pronsolerc')
+
+            config = os.path.join(self.config_dir, config_name)
+        logging.info('Loading config file ' + config)
+
+        # Load the default configuration file
         try:
-            try:
-                self.load_rc(os.path.join(os.path.expanduser("~"), rc_filename))
-            except IOError:
-                self.load_rc(rc_filename)
-        except IOError:
-            # make sure the filename is initialized
-            self.rc_filename = os.path.abspath(os.path.join(os.path.expanduser("~"), rc_filename))
+            self.load_rc(config)
+        except FileNotFoundError:
+            # Make sure the filename is initialized,
+            # and create the file if it doesn't exist
+            self.rc_filename = config
+            open(self.rc_filename, 'a').close()
 
     def save_in_rc(self, key, definition):
         """
@@ -620,9 +677,14 @@ class pronsole(cmd.Cmd):
         try:
             written = False
             if os.path.exists(self.rc_filename):
-                shutil.copy(self.rc_filename, self.rc_filename + "~bak")
-                rci = codecs.open(self.rc_filename + "~bak", "r", "utf-8")
-            rco = codecs.open(self.rc_filename + "~new", "w", "utf-8")
+                if not os.path.exists(self.cache_dir):
+                    os.makedirs(self.cache_dir)
+                configcache = os.path.join(self.cache_dir, os.path.basename(self.rc_filename))
+                configcachebak = configcache + "~bak"
+                configcachenew = configcache + "~new"
+                shutil.copy(self.rc_filename, configcachebak)
+                rci = codecs.open(configcachebak, "r", "utf-8")
+            rco = codecs.open(configcachenew, "w", "utf-8")
             if rci is not None:
                 overwriting = False
                 for rc_cmd in rci:
@@ -643,12 +705,12 @@ class pronsole(cmd.Cmd):
             if rci is not None:
                 rci.close()
             rco.close()
-            shutil.move(self.rc_filename + "~new", self.rc_filename)
+            shutil.move(configcachenew, self.rc_filename)
             # if definition != "":
             #    self.log("Saved '"+key+"' to '"+self.rc_filename+"'")
             # else:
             #    self.log("Removed '"+key+"' from '"+self.rc_filename+"'")
-        except Exception, e:
+        except Exception as e:
             self.logError("Saving failed for ", key + ":", str(e))
         finally:
             del rci, rco
@@ -691,8 +753,8 @@ class pronsole(cmd.Cmd):
             try:
                 self.load_rc(config)
             except EnvironmentError as err:
-                print ("ERROR: Unable to load configuration file: %s" %
-                       str(err)[10:])
+                print(("ERROR: Unable to load configuration file: %s" %
+                       str(err)[10:]))
                 sys.exit(1)
         if not self.rc_loaded:
             self.load_default_rc()
@@ -702,8 +764,7 @@ class pronsole(cmd.Cmd):
         self.processing_args = False
         self.update_rpc_server(None, self.settings.rpc_server)
         if args.filename:
-            filename = args.filename.decode(locale.getpreferredencoding())
-            self.cmdline_filename_callback(filename)
+            self.cmdline_filename_callback(args.filename)
 
     def cmdline_filename_callback(self, filename):
         self.do_load(filename)
@@ -741,7 +802,8 @@ class pronsole(cmd.Cmd):
                 self.logError(traceback.format_exc())
             return False
         self.statuscheck = True
-        self.status_thread = threading.Thread(target = self.statuschecker)
+        self.status_thread = threading.Thread(target = self.statuschecker,
+                                              name = 'status thread')
         self.status_thread.start()
         return True
 
@@ -795,17 +857,19 @@ class pronsole(cmd.Cmd):
         baselist = []
         if os.name == "nt":
             try:
-                key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM")
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM")
                 i = 0
                 while(1):
-                    baselist += [_winreg.EnumValue(key, i)[1]]
+                    baselist += [winreg.EnumValue(key, i)[1]]
                     i += 1
             except:
                 pass
 
         for g in ['/dev/ttyUSB*', '/dev/ttyACM*', "/dev/tty.*", "/dev/cu.*", "/dev/rfcomm*"]:
             baselist += glob.glob(g)
-        return filter(self._bluetoothSerialFilter, baselist)
+        if(sys.platform!="win32" and self.settings.devicepath):
+            baselist += glob.glob(self.settings.devicepath)
+        return [p for p in baselist if self._bluetoothSerialFilter(p)]
 
     def _bluetoothSerialFilter(self, serial):
         return not ("Bluetooth" in serial or "FireFly" in serial)
@@ -837,7 +901,7 @@ class pronsole(cmd.Cmd):
             if self.p.writefailures >= 4:
                 self.logError(_("Disconnecting after 4 failed writes."))
                 self.status_thread = None
-                self.disconnect()
+                self.p.disconnect()
                 return
             if do_monitoring:
                 if self.sdprinting and not self.paused:
@@ -888,7 +952,7 @@ class pronsole(cmd.Cmd):
             self.fgcode = gcoder.LightGCode(deferred = True)
         else:
             self.fgcode = gcode
-        self.fgcode.prepare(open(filename, "rU"),
+        self.fgcode.prepare(open(filename, "r", encoding="utf-8"),
                             get_home_pos(self.build_dimensions_list),
                             layer_callback = layer_callback)
         self.fgcode.estimate_duration()
@@ -922,11 +986,11 @@ class pronsole(cmd.Cmd):
                 return
         try:
             if settings:
-                command = self.settings.sliceoptscommand
+                command = self.settings.slicecommandpath+self.settings.sliceoptscommand
                 self.log(_("Entering slicer settings: %s") % command)
                 run_command(command, blocking = True)
             else:
-                command = self.settings.slicecommand
+                command = self.settings.slicecommandpath+self.settings.slicecommand
                 stl_name = l[0]
                 gcode_name = stl_name.replace(".stl", "_export.gcode").replace(".STL", "_export.gcode")
                 run_command(command,
@@ -935,7 +999,7 @@ class pronsole(cmd.Cmd):
                             blocking = True)
                 self.log(_("Loading sliced file."))
                 self.do_load(l[0].replace(".stl", "_export.gcode"))
-        except Exception, e:
+        except Exception as e:
             self.logError(_("Slicing failed: %s") % e)
 
     def complete_slice(self, text, line, begidx, endidx):
@@ -1072,7 +1136,7 @@ class pronsole(cmd.Cmd):
                 self.log(_("Files on SD card:"))
                 self.log("\n".join(self.sdfiles))
         elif self.sdlisting:
-            self.sdfiles.append(line.strip().lower())
+            self.sdfiles.append(re.sub(" \d+$","",line.strip().lower()))
 
     def _do_ls(self, echo):
         # FIXME: this was 2, but I think it should rather be 0 as in do_upload
@@ -1196,6 +1260,18 @@ class pronsole(cmd.Cmd):
                 new_total = self.settings.total_filament_used + self.fgcode.filament_length
                 self.set("total_filament_used", new_total)
 
+                # Update the length of filament in the spools
+                self.spool_manager.refresh()
+                if(len(self.fgcode.filament_length_multi)>1):
+                    for i in enumerate(self.fgcode.filament_length_multi):
+                        if self.spool_manager.getSpoolName(i[0]) != None:
+                            self.spool_manager.editLength(
+                                -i[1], extruder = i[0])
+                else:
+                    if self.spool_manager.getSpoolName(0) != None:
+                            self.spool_manager.editLength(
+                                -self.fgcode.filament_length, extruder = 0)
+
             if not self.settings.final_command:
                 return
             output = get_command_output(self.settings.final_command,
@@ -1207,7 +1283,7 @@ class pronsole(cmd.Cmd):
 
     def recvcb_report(self, l):
         isreport = REPORT_NONE
-        if "ok C:" in l or "Count" in l \
+        if "ok C:" in l or " Count " in l \
            or ("X:" in l and len(gcoder.m114_exp.findall(l)) == 6):
             self.posreport = l
             isreport = REPORT_POS
@@ -1265,7 +1341,7 @@ class pronsole(cmd.Cmd):
             report_type = self.recvcb_report(l)
             if report_type & REPORT_TEMP:
                 self.status.update_tempreading(l)
-            if l != "ok" and not self.sdlisting \
+            if not self.lineignorepattern.match(l) and l[:4] != "wait" and not self.sdlisting \
                and not self.monitoring and (report_type == REPORT_NONE or report_type & REPORT_MANUAL):
                 if l[:5] == "echo:":
                     l = l[5:].lstrip()
@@ -1337,10 +1413,10 @@ class pronsole(cmd.Cmd):
             self.p.send_now("M105")
             time.sleep(0.75)
             if not self.status.bed_enabled:
-                self.log(_("Hotend: %s/%s") % (self.status.extruder_temp, self.status.extruder_temp_target))
+                self.log(_("Hotend: %s%s/%s%s") % (self.status.extruder_temp, DEG, self.status.extruder_temp_target, DEG))
             else:
-                self.log(_("Hotend: %s/%s") % (self.status.extruder_temp, self.status.extruder_temp_target))
-                self.log(_("Bed:    %s/%s") % (self.status.bed_temp, self.status.bed_temp_target))
+                self.log(_("Hotend: %s%s/%s%s") % (self.status.extruder_temp, DEG, self.status.extruder_temp_target, DEG))
+                self.log(_("Bed:    %s%s/%s%s") % (self.status.bed_temp, DEG, self.status.bed_temp_target, DEG))
 
     def help_gettemp(self):
         self.log(_("Read the extruder and bed temperature."))
@@ -1371,7 +1447,7 @@ class pronsole(cmd.Cmd):
     def help_settemp(self):
         self.log(_("Sets the hotend temperature to the value entered."))
         self.log(_("Enter either a temperature in celsius or one of the following keywords"))
-        self.log(", ".join([i + "(" + self.temps[i] + ")" for i in self.temps.keys()]))
+        self.log(', '.join('%s (%s)'%kv for kv in self.temps.items()))
 
     def complete_settemp(self, text, line, begidx, endidx):
         if (len(line.split()) == 2 and line[-1] != " ") or (len(line.split()) == 1 and line[-1] == " "):
@@ -1461,6 +1537,7 @@ class pronsole(cmd.Cmd):
             if self.p.online:
                 self.p.send_now("T%d" % tool)
                 self.log(_("Using tool %d.") % tool)
+                self.current_tool = tool
             else:
                 self.logError(_("Printer is not online."))
         else:
@@ -1565,6 +1642,12 @@ class pronsole(cmd.Cmd):
         self.p.send_now("G1 E" + str(length) + " F" + str(feed))
         self.p.send_now("G90")
 
+        # Update the length of filament in the current spool
+        self.spool_manager.refresh()
+        if self.spool_manager.getSpoolName(self.current_tool) != None:
+            self.spool_manager.editLength(-length,
+                extruder = self.current_tool)
+
     def help_extrude(self):
         self.log(_("Extrudes a length of filament, 5mm by default, or the number of mm given as a parameter"))
         self.log(_("extrude - extrudes 5mm of filament at 300mm/min (5mm/s)"))
@@ -1663,7 +1746,7 @@ class pronsole(cmd.Cmd):
             self.onecmd(command)
 
     def do_run_script(self, l):
-        p = run_command(l, {"$s": str(self.filename)}, stdout = subprocess.PIPE)
+        p = run_command(l, {"$s": str(self.filename)}, stdout = subprocess.PIPE, universal_newlines = True)
         for line in p.stdout.readlines():
             self.log("<< " + line.strip())
 
@@ -1671,9 +1754,24 @@ class pronsole(cmd.Cmd):
         self.log(_("Runs a custom script. Current gcode filename can be given using $s token."))
 
     def do_run_gcode_script(self, l):
-        p = run_command(l, {"$s": str(self.filename)}, stdout = subprocess.PIPE)
-        for line in p.stdout.readlines():
-            self.onecmd(line.strip())
+        try:
+            self.fgcode = RGSGCoder(l)
+            self.do_print(None)
+        except BaseException as e:
+            self.logError(traceback.format_exc())
 
     def help_run_gcode_script(self):
         self.log(_("Runs a custom script which output gcode which will in turn be executed. Current gcode filename can be given using $s token."))
+
+    def complete_run_gcode_script(self, text, line, begidx, endidx):
+        words = line.split()
+        sep = os.path.sep
+        if len(words) < 2:
+            return ['.' + sep , sep]
+        corrected_text = words[-1] # text arg skips leading '/', include it
+        if corrected_text == '.':
+            return ['./'] # guide user that in linux, PATH does not include . and relative executed scripts must start with ./
+        prefix_len = len(corrected_text) - len(text)
+        res = [((f + sep) if os.path.isdir(f) else f)[prefix_len:] #skip unskipped prefix_len
+                for f in glob.glob(corrected_text + '*')]
+        return res

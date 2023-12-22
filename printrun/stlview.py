@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # This file is part of the Printrun suite.
 #
@@ -42,7 +42,7 @@ from .gl.libtatlin import actors
 def vec(*args):
     return (GLfloat * len(args))(*args)
 
-class stlview(object):
+class stlview:
     def __init__(self, facets, batch):
         # Create the vertex and normal arrays.
         vertices = []
@@ -54,7 +54,7 @@ class stlview(object):
                 normals.extend(i[0])
 
         # Create a list of triangle indices.
-        indices = range(3 * len(facets))  # [[3*i, 3*i+1, 3*i+2] for i in xrange(len(facets))]
+        indices = list(range(3 * len(facets)))  # [[3*i, 3*i+1, 3*i+2] for i in xrange(len(facets))]
         self.vertex_list = batch.add_indexed(len(vertices) // 3,
                                              GL_TRIANGLES,
                                              None,  # group,
@@ -69,11 +69,15 @@ class StlViewPanel(wxGLPanel):
 
     do_lights = False
 
-    def __init__(self, parent, size, id = wx.ID_ANY,
+    def __init__(self, parent, size,
                  build_dimensions = None, circular = False,
-                 antialias_samples = 0):
-        super(StlViewPanel, self).__init__(parent, id, wx.DefaultPosition, size, 0,
+                 antialias_samples = 0,
+                 grid = (1, 10), perspective=False):
+        if perspective:
+            self.orthographic=False
+        super().__init__(parent, wx.DefaultPosition, size, 0,
                                            antialias_samples = antialias_samples)
+        
         self.batches = []
         self.rot = 0
         self.canvas.Bind(wx.EVT_MOUSE_EVENTS, self.move)
@@ -87,10 +91,11 @@ class StlViewPanel(wxGLPanel):
         else:
             self.build_dimensions = [200, 200, 100, 0, 0, 0]
         self.platform = actors.Platform(self.build_dimensions,
-                                        circular = circular)
+                                        circular = circular,
+                                        grid = grid)
         self.dist = max(self.build_dimensions[0], self.build_dimensions[1])
         self.basequat = [0, 0, 0, 1]
-        wx.CallAfter(self.forceresize)
+        wx.CallAfter(self.forceresize) #why needed
         self.mousepos = (0, 0)
 
     def OnReshape(self):
@@ -155,8 +160,11 @@ class StlViewPanel(wxGLPanel):
             self.parent.clickcb(event)
 
     def forceresize(self):
-        self.SetClientSize((self.GetClientSize()[0], self.GetClientSize()[1] + 1))
-        self.SetClientSize((self.GetClientSize()[0], self.GetClientSize()[1] - 1))
+        #print('forceresize')
+        x, y = self.GetClientSize()
+        #TODO: probably not needed
+        self.SetClientSize((x, y+1))
+        self.SetClientSize((x, y))
         self.initialized = False
 
     def move(self, event):
@@ -167,27 +175,22 @@ class StlViewPanel(wxGLPanel):
         RMB: nothing
             with shift move viewport
         """
-        self.mousepos = event.GetPositionTuple()
-        if event.Dragging() and event.LeftIsDown():
-            self.handle_rotation(event)
-        elif event.Dragging() and event.RightIsDown():
-            self.handle_translation(event)
-        elif event.ButtonUp(wx.MOUSE_BTN_LEFT):
-            if self.initpos is not None:
-                self.initpos = None
-        elif event.ButtonUp(wx.MOUSE_BTN_RIGHT):
-            if self.initpos is not None:
-                self.initpos = None
-        else:
-            event.Skip()
-            return
+        self.mousepos = event.GetPosition()
+        if event.Dragging():
+            if event.LeftIsDown():
+                self.handle_rotation(event)
+            elif event.RightIsDown():
+                self.handle_translation(event)
+            self.Refresh(False)
+        elif event.ButtonUp(wx.MOUSE_BTN_LEFT) or \
+            event.ButtonUp(wx.MOUSE_BTN_RIGHT):
+            self.initpos = None
         event.Skip()
-        wx.CallAfter(self.Refresh)
 
     def handle_wheel(self, event):
         delta = event.GetWheelRotation()
         factor = 1.05
-        x, y = event.GetPositionTuple()
+        x, y = event.GetPosition()
         x, y, _ = self.mouse_to_3d(x, y, local_transform = True)
         if delta > 0:
             self.zoom(factor, (x, y))
@@ -203,7 +206,7 @@ class StlViewPanel(wxGLPanel):
         wx.CallAfter(self.Refresh)
 
     def keypress(self, event):
-        """gets keypress events and moves/rotates acive shape"""
+        """gets keypress events and moves/rotates active shape"""
         keycode = event.GetKeyCode()
         step = 5
         angle = 18
@@ -257,6 +260,8 @@ class StlViewPanel(wxGLPanel):
         if not self.platform.initialized:
             self.platform.init()
         self.initialized = 1
+        #TODO: this probably creates constant redraw
+        # create_objects is called during OnDraw, remove
         wx.CallAfter(self.Refresh)
 
     def prepare_model(self, m, scale):
@@ -268,7 +273,7 @@ class StlViewPanel(wxGLPanel):
         wx.CallAfter(self.Refresh)
 
     def update_object_resize(self):
-        '''called when the window recieves only if opengl is initialized'''
+        '''called when the window receives only if opengl is initialized'''
         pass
 
     def draw_objects(self):

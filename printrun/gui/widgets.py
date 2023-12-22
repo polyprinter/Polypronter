@@ -13,83 +13,123 @@
 # You should have received a copy of the GNU General Public License
 # along with Printrun.  If not, see <http://www.gnu.org/licenses/>.
 
-import wx
 import re
+import string  # For determining whitespaces and punctuation marks
+import platform  # Used by get_space() for platform specific spacing
+import logging
+import wx
+
+def get_space(key: str) -> int:
+    '''
+    Takes key (str), returns spacing value (int).
+    Provides correct spacing in pixel for borders and sizers.
+    '''
+
+    spacing_values = {
+        'major': 12,  # e.g. outer border of dialog boxes
+        'minor': 8,  # e.g. border of inner elements
+        'mini': 4,
+        'stddlg': 4,  # Border around std dialog buttons.
+        'stddlg-frame': 8,  # Border around std dialog buttons when used with frames.
+        'staticbox': 0,  # Border between StaticBoxSizers and the elements inside.
+        'settings': 16,  # How wide setting elements can be (multiples of this)
+        'none': 0
+    }
+
+    # Platform specific overrides, Windows
+    if platform.system() == 'Windows':
+        spacing_values['stddlg'] = 8
+        spacing_values['staticbox'] = 4
+
+    # Platform specific overrides, macOS
+    if platform.system() == 'Darwin':
+        spacing_values['stddlg-frame'] = 12
+
+    try:
+        return spacing_values[key]
+    except KeyError:
+        logging.warning("get_space() cannot return spacing value, "
+                        "will return 0 instead. No entry: %s" % key)
+        return 0
+
 
 class MacroEditor(wx.Dialog):
     """Really simple editor to edit macro definitions"""
 
     def __init__(self, macro_name, definition, callback, gcode = False):
         self.indent_chars = "  "
-        title = "  macro %s"
-        if gcode:
-            title = "  %s"
+        title = "%s" if gcode else "Macro %s"
         self.gcode = gcode
+        self.fr_settings = (False, False, True, '')
         wx.Dialog.__init__(self, None, title = title % macro_name,
                            style = wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.callback = callback
-        self.panel = wx.Panel(self, -1)
+        panel = wx.Panel(self)
+        panelsizer = wx.BoxSizer(wx.VERTICAL)
         titlesizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.titletext = wx.StaticText(self.panel, -1, "              _")  # title%macro_name)
-        titlesizer.Add(self.titletext, 1)
-        self.findb = wx.Button(self.panel, -1, _("Find"), style = wx.BU_EXACTFIT)  # New button for "Find" (Jezmy)
-        self.findb.Bind(wx.EVT_BUTTON, self.find)
-        self.okb = wx.Button(self.panel, -1, _("Save"), style = wx.BU_EXACTFIT)
-        self.okb.Bind(wx.EVT_BUTTON, self.save)
-        self.Bind(wx.EVT_CLOSE, self.close)
-        titlesizer.Add(self.findb)
-        titlesizer.Add(self.okb)
-        self.cancelb = wx.Button(self.panel, -1, _("Cancel"), style = wx.BU_EXACTFIT)
-        self.cancelb.Bind(wx.EVT_BUTTON, self.close)
-        titlesizer.Add(self.cancelb)
-        topsizer = wx.BoxSizer(wx.VERTICAL)
-        topsizer.Add(titlesizer, 0, wx.EXPAND)
-        self.e = wx.TextCtrl(self.panel, style = wx.HSCROLL | wx.TE_MULTILINE | wx.TE_RICH2, size = (400, 400))
+        self.status_field = wx.StaticText(panel, -1, "")
+        titlesizer.Add(self.status_field, 1, wx.ALIGN_CENTER_VERTICAL)
+        self.findbtn = wx.Button(panel, -1, _("Find..."))  # New button for "Find" (Jezmy)
+        self.findbtn.Bind(wx.EVT_BUTTON, self.on_find)
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+
+        titlesizer.Add(self.findbtn, 0, wx.ALIGN_CENTER_VERTICAL)
+        panelsizer.Add(titlesizer, 0, wx.EXPAND | wx.ALL, get_space('minor'))
+        self.text_box = wx.TextCtrl(panel,
+                                    style = wx.HSCROLL | wx.TE_MULTILINE | wx.TE_RICH2 | wx.TE_NOHIDESEL,
+                                    size = (400, 400))
         if not self.gcode:
-            self.e.SetValue(self.unindent(definition))
+            self.text_box.SetValue(self.unindent(definition))
         else:
-            self.e.SetValue("\n".join(definition))
-        topsizer.Add(self.e, 1, wx.ALL | wx.EXPAND)
-        self.panel.SetSizer(topsizer)
-        topsizer.Layout()
+            self.text_box.SetValue("\n".join(definition))
+        panelsizer.Add(self.text_box, 1, wx.EXPAND)
+        panel.SetSizer(panelsizer)
+        topsizer = wx.BoxSizer(wx.VERTICAL)
+        topsizer.Add(panel, 1, wx.EXPAND | wx.ALL, get_space('none'))
+        # No StaticLine in this case bc the TextCtrl acts as a divider
+        btnsizer = wx.StdDialogButtonSizer()
+        self.savebtn = wx.Button(self, wx.ID_SAVE)
+        self.savebtn.SetDefault()
+        self.savebtn.Bind(wx.EVT_BUTTON, self.on_save)
+        self.cancelbtn = wx.Button(self, wx.ID_CANCEL)
+        self.cancelbtn.Bind(wx.EVT_BUTTON, self.on_close)
+        btnsizer.AddButton(self.savebtn)
+        btnsizer.AddButton(self.cancelbtn)
+        btnsizer.Realize()
+        topsizer.Add(btnsizer, 0, wx.ALIGN_RIGHT | wx.ALL, get_space('stddlg'))
+        self.SetSizer(topsizer)
+        self.SetMinClientSize((230, 150))  # TODO: Check if self.FromDIP() is needed
         topsizer.Fit(self)
+        self.CentreOnParent()
         self.Show()
-        self.e.SetFocus()
+        self.text_box.SetFocus()
 
-    def find(self, ev):
-        # Ask user what to look for, find it and point at it ...  (Jezmy)
-        S = self.e.GetStringSelection()
-        if not S:
-            S = "Z"
-        FindValue = wx.GetTextFromUser('Please enter a search string:', caption = "Search", default_value = S, parent = None)
-        somecode = self.e.GetValue()
-        position = somecode.find(FindValue, self.e.GetInsertionPoint())
-        if position == -1:
-            self.titletext.SetLabel(_("Not Found!"))
+    def on_find(self, event):
+        for window in self.GetChildren():
+            if isinstance(window, wx.FindReplaceDialog):
+                window.Show()
+                window.Raise()
+                return
+        FindAndReplace(self.text_box, self.status_field, self.fr_settings, self.fr_callback)
+
+    def fr_callback(self, val1, val2, val3, val4):
+        self.fr_settings = (val1, val2, val3, val4)
+
+    def on_save(self, event):
+        self.Destroy()
+        if not self.gcode:
+            self.callback(self.reindent(self.text_box.GetValue()))
         else:
-            self.titletext.SetLabel(str(position))
+            self.callback(self.text_box.GetValue().split("\n"))
 
-            # ananswer = wx.MessageBox(str(numLines)+" Lines detected in file\n"+str(position), "OK")
-            self.e.SetFocus()
-            self.e.SetInsertionPoint(position)
-            self.e.SetSelection(position, position + len(FindValue))
-            self.e.ShowPosition(position)
+    def on_close(self, event):
+        self.Destroy()
 
-    def ShowMessage(self, ev, message):
+    def ShowMessage(self, event, message):
         dlg = wx.MessageDialog(self, message,
                                "Info!", wx.OK | wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
-
-    def save(self, ev):
-        self.Destroy()
-        if not self.gcode:
-            self.callback(self.reindent(self.e.GetValue()))
-        else:
-            self.callback(self.e.GetValue().split("\n"))
-
-    def close(self, ev):
-        self.Destroy()
 
     def unindent(self, text):
         self.indent_chars = text[:len(text) - len(text.lstrip())]
@@ -116,21 +156,296 @@ class MacroEditor(wx.Dialog):
                 reindented += self.indent_chars + line + "\n"
         return reindented
 
-SETTINGS_GROUPS = {"Printer": _("Printer settings"),
-                   "UI": _("User interface"),
+class FindAndReplace():
+    '''A dialogue that provides full functionality for finding
+    and replacing strings in a given target string.
+    '''
+    def __init__(self, text_cntrl: wx.TextCtrl,
+                 statusbar: wx.StaticText,
+                 settings: tuple = (False, False, True, ''),
+                 settings_cb = None):
+
+        self.matchcase = settings[0]  # wx.FR_MATCHCASE
+        self.wholeword = settings[1]  # wx.FR_WHOLEWORD
+        self.down = settings[2]  # wx.FR_DOWN
+        self.callback = settings_cb
+
+        self.statusbar = statusbar
+        self.text_cntrl = text_cntrl
+        self.find_str = settings[3]
+        self.replace_str = ""
+        self.target = ""
+        self.all_matches = 0
+        self.current_match = 0
+
+        if self.text_cntrl.IsEmpty():
+            self.statusbar.SetLabel(_("No content to search."))
+            return
+
+        # Initialise and hold search parameters in fr_data
+        self.fr_data = wx.FindReplaceData(self.bools_to_flags(settings))
+        selection = text_cntrl.GetStringSelection()
+        if selection and not len(selection) > 40 and selection not in ('\n', '\r'):
+            self.find_str = selection
+        self.fr_data.SetFindString(self.find_str)
+        self.fr_dialog = wx.FindReplaceDialog(self.text_cntrl,
+                                              self.fr_data, _("Find and Replace..."),
+                                              wx.FR_REPLACEDIALOG)
+
+        # Bind all button events
+        self.fr_dialog.Bind(wx.EVT_FIND, self.on_find)
+        self.fr_dialog.Bind(wx.EVT_FIND_NEXT, self.on_find_next)
+        self.fr_dialog.Bind(wx.EVT_FIND_REPLACE, self.on_replace)
+        self.fr_dialog.Bind(wx.EVT_FIND_REPLACE_ALL, self.on_replace_all)
+        self.fr_dialog.Bind(wx.EVT_FIND_CLOSE, self.on_cancel)
+
+        # Move the dialogue to the side of the editor where there is more space
+        display_size = wx.Display(self.fr_dialog).GetClientArea()
+        ed_x, ed_y, ed_width, ed_height = self.fr_dialog.GetParent().GetRect()
+        fr_x, fr_y, fr_width, fr_height = self.fr_dialog.GetRect()
+        if display_size[2] - ed_x - ed_width < fr_width:
+            fr_x = ed_x - fr_width
+        else:
+            fr_x = ed_x + ed_width - 16
+        self.fr_dialog.SetRect((fr_x, fr_y, fr_width, fr_height))
+        self.fr_dialog.Show()
+
+    def update_data(self):
+        '''Reads the current settings of the FindReplaceDialog and updates
+        all relevant strings of the search feature.
+        '''
+        # Update flags
+        flags_binary = bin(self.fr_data.GetFlags())[2:].zfill(3)
+        self.down = bool(int(flags_binary[2]))
+        self.wholeword = bool(int(flags_binary[1]))
+        self.matchcase = bool(int(flags_binary[0]))
+
+        # Update search data
+        self.find_str = self.fr_data.GetFindString()
+        self.replace_str = self.fr_data.GetReplaceString()
+        self.target = self.text_cntrl.GetRange(0, self.text_cntrl.GetLastPosition())
+        if not self.find_str:
+            self.statusbar.SetLabel("")
+
+        if not self.matchcase:
+            # When search is not case-sensitve, convert the whole string to lowercase
+            self.find_str = self.find_str.casefold()
+            self.target = self.target.casefold()
+
+    def find_next(self):
+        self.update_data()
+        if not self.update_all_matches():
+            return
+
+        # If the search string is already selected, move
+        # the InsertionPoint and then select the next match
+        idx = self.text_cntrl.GetInsertionPoint()
+        selection = self.get_selected_str()
+        if selection == self.find_str:
+            sel_from, sel_to = self.text_cntrl.GetSelection()
+            self.text_cntrl.SelectNone()
+            if self.down:
+                self.text_cntrl.SetInsertionPoint(sel_to)
+                idx = sel_to
+            else:
+                self.text_cntrl.SetInsertionPoint(sel_from)
+                idx = sel_from
+
+        self.select_next_match(idx)
+
+    def replace_next(self):
+        '''Replaces one time the next instance of the search string
+        in the defined direction.
+        '''
+        self.update_data()
+        if not self.update_all_matches():
+            return
+
+        # If the search string is already selected, replace it.
+        # Otherwise find the next match an replace that one.
+        # The while loop helps us with the wholeword checks
+        if self.get_selected_str() == self.find_str:
+            sel_from, sel_to = self.text_cntrl.GetSelection()
+        else:
+            sel_from = self.get_next_idx(self.text_cntrl.GetInsertionPoint())
+            sel_to = sel_from + len(self.find_str)
+        self.text_cntrl.SelectNone()
+        self.text_cntrl.Replace(sel_from, sel_to, self.replace_str)
+
+        # The text_cntrl object is changed directly so
+        # we need to update the copy in self.target
+        self.update_data()
+
+        self.all_matches -= 1
+        if not self.all_matches:
+            self.statusbar.SetLabel(_('No matches'))
+            return
+        self.select_next_match(sel_from)
+
+    def replace_all(self):
+        '''Goes through the whole file and replaces
+        every instance of the search string.
+        '''
+        position = self.text_cntrl.GetInsertionPoint()
+        self.update_data()
+        if not self.update_all_matches():
+            return
+
+        self.text_cntrl.SelectNone()
+        seek_idx = 0
+        for match in range(self.all_matches):
+            sel_from = self.get_next_idx(seek_idx)
+            sel_to = sel_from + len(self.find_str)
+            self.text_cntrl.Replace(sel_from, sel_to, self.replace_str)
+            seek_idx = sel_from
+            self.update_data()
+
+        self.statusbar.SetLabel(_('Replaced {} matches').format(self.all_matches))
+        self.all_matches = 0
+        self.text_cntrl.SetInsertionPoint(position)
+        self.text_cntrl.ShowPosition(position)
+
+    def bools_to_flags(self, bools) -> int:
+        '''Converts a tuple of bool settings into an integer
+        that is readable for wx.FindReplaceData'''
+        matchcase = wx.FR_MATCHCASE if bools[0] else 0
+        wholeword = wx.FR_WHOLEWORD if bools[1] else 0
+        down = wx.FR_DOWN if bools[2] else 0
+        return matchcase | wholeword | down
+
+    def get_selected_str(self) -> str:
+        '''Returns the currently selected string, accounting for matchcase.'''
+        selection = self.text_cntrl.GetStringSelection()
+        if not self.matchcase:
+            selection = selection.casefold()
+        return selection
+
+    def get_next_idx(self, position: int) -> int:
+        '''Searches for the next instance of the search string
+        in the defined direction.
+        Takes wholeword setting into account.
+        Returns index of the first character.
+        '''
+        while True:
+            if self.down:
+                next_idx = self.target.find(self.find_str, position)
+                if next_idx == -1:
+                    next_idx = self.target.find(self.find_str, 0, position)
+                if not self.wholeword or (self.wholeword and self.is_wholeword(next_idx)):
+                    break
+                position = next_idx + len(self.find_str)
+            else:
+                next_idx = self.target.rfind(self.find_str, 0, position)
+                if next_idx == -1:
+                    next_idx = self.target.rfind(self.find_str, position)
+                if not self.wholeword or (self.wholeword and self.is_wholeword(next_idx)):
+                    break
+                position = next_idx
+        return next_idx
+
+    def update_all_matches(self) -> bool:
+        '''Updates self.all_matches with the amount of search
+        string instances in the target string.
+        '''
+        self.all_matches = 0
+        if self.wholeword:
+            selection = self.text_cntrl.GetSelection()
+            self.text_cntrl.SetInsertionPoint(0)
+            seek_idx = 0
+            found_idx = 0
+            while found_idx != -1:
+                found_idx = self.target.find(self.find_str, seek_idx)
+                if found_idx == -1:
+                    break
+                if self.is_wholeword(found_idx):
+                    self.all_matches += 1
+                seek_idx = found_idx + len(self.find_str)
+            self.text_cntrl.SetSelection(selection[0], selection[1])
+        else:
+            self.all_matches = self.target.count(self.find_str)
+
+        if not self.all_matches:
+            self.statusbar.SetLabel(_('No matches'))
+            return False
+        return True
+
+    def select_next_match(self, position: int):
+        '''Selects the next match in the defined direction.'''
+        idx = self.get_next_idx(position)
+
+        self.text_cntrl.SetSelection(idx, idx + len(self.find_str))
+        self.text_cntrl.ShowPosition(idx)
+        self.update_current_match()
+
+    def update_current_match(self):
+        '''Updates the current match index.'''
+        self.current_match = 0
+        position = self.text_cntrl.GetInsertionPoint()
+        if self.wholeword:
+            selection = self.text_cntrl.GetSelection()
+            seek_idx = position
+            found_idx = 0
+            while found_idx != -1:
+                found_idx = self.target.rfind(self.find_str, 0, seek_idx)
+                if found_idx == -1:
+                    break
+                if self.is_wholeword(found_idx):
+                    self.current_match += 1
+                seek_idx = found_idx
+            self.current_match += 1  # We counted all matches before the current, therefore +1
+            self.text_cntrl.SetSelection(selection[0], selection[1])
+        else:
+            self.current_match = self.target.count(self.find_str, 0, position) + 1
+
+        self.statusbar.SetLabel(_('Match {} out of {}').format(self.current_match, self.all_matches))
+
+    def is_wholeword(self, index: int) -> bool:
+        '''Returns True if the search string is a whole word.
+        That is, if it is enclosed in spaces, line breaks, or
+        the very start or end of the target string.
+        '''
+        start_idx = index
+        delimiter = string.whitespace + string.punctuation
+        if start_idx != 0 and self.target[start_idx - 1] not in delimiter:
+            return False
+        end_idx = start_idx + len(self.find_str)
+        if not end_idx > len(self.target) and self.target[end_idx] not in delimiter:
+            return False
+        return True
+
+    def on_find_next(self, event):
+        self.find_next()
+
+    def on_find(self, event):
+        self.find_next()
+
+    def on_replace(self, event):
+        self.replace_next()
+
+    def on_replace_all(self, event):
+        self.replace_all()
+
+    def on_cancel(self, event):
+        self.statusbar.SetLabel("")
+        if self.callback:
+            self.update_data()
+            self.callback(self.matchcase, self.wholeword,
+                          self.down, self.find_str)
+        self.fr_dialog.Destroy()
+
+
+SETTINGS_GROUPS = {"Printer": _("Printer Settings"),
+                   "UI": _("User Interface"),
                    "Viewer": _("Viewer"),
                    "Colors": _("Colors"),
-                   "External": _("External commands")}
+                   "External": _("External Commands")}
 
 class PronterOptionsDialog(wx.Dialog):
     """Options editor"""
     def __init__(self, pronterface):
-        wx.Dialog.__init__(self, parent = None, title = _("Edit settings"),
-                           size = (400, 500), style = wx.DEFAULT_DIALOG_STYLE)
-        panel = wx.Panel(self)
-        header = wx.StaticBox(panel, label = _("Settings"))
-        sbox = wx.StaticBoxSizer(header, wx.VERTICAL)
-        notebook = wx.Notebook(panel)
+        wx.Dialog.__init__(self, parent = None, title = _("Edit Settings"),
+                           size = wx.DefaultSize, style = wx.DEFAULT_DIALOG_STYLE)
+        self.notebook = notebook = wx.Notebook(self)
         all_settings = pronterface.settings._all_settings()
         group_list = []
         groups = {}
@@ -143,26 +458,33 @@ class PronterOptionsDialog(wx.Dialog):
                 groups[setting.group] = []
             groups[setting.group].append(setting)
         for group in group_list:
-            grouppanel = wx.Panel(notebook, -1)
+            grouppanel = wx.ScrolledWindow(notebook, -1, style = wx.VSCROLL)
+            # Setting the scrollrate based on the systemfont
+            fontsize = wx.SystemSettings.GetFont(wx.SYS_SYSTEM_FONT).GetPixelSize()
+            grouppanel.SetScrollRate(fontsize.x, fontsize.y)
             notebook.AddPage(grouppanel, SETTINGS_GROUPS[group])
             settings = groups[group]
-            grid = wx.GridBagSizer(hgap = 8, vgap = 2)
+            grid = wx.GridBagSizer(hgap = get_space('minor'), vgap = get_space('mini'))
             current_row = 0
+            # This gives the first entry on the page a tiny bit of extra space to the top
+            grid.Add((12, get_space('mini')), pos = (current_row, 0), span = (1, 2))
+            current_row += 1
             for setting in settings:
                 if setting.name.startswith("separator_"):
                     sep = wx.StaticLine(grouppanel, size = (-1, 5), style = wx.LI_HORIZONTAL)
                     grid.Add(sep, pos = (current_row, 0), span = (1, 2),
-                             border = 3, flag = wx.ALIGN_CENTER | wx.ALL | wx.EXPAND)
+                             border = get_space('mini'), flag = wx.ALIGN_CENTER | wx.ALL | wx.EXPAND)
                     current_row += 1
                 label, widget = setting.get_label(grouppanel), setting.get_widget(grouppanel)
                 if setting.name.startswith("separator_"):
                     font = label.GetFont()
                     font.SetWeight(wx.BOLD)
                     label.SetFont(font)
-                grid.Add(label, pos = (current_row, 0),
-                         flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
-                grid.Add(widget, pos = (current_row, 1),
-                         flag = wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
+                grid.Add(label, pos = (current_row, 0), border = get_space('minor'),
+                         flag = wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT | wx.LEFT)
+                expand = 0 if isinstance(widget, (wx.SpinCtrlDouble, wx.Choice, wx.ComboBox)) else wx.EXPAND
+                grid.Add(widget, pos = (current_row, 1), border = get_space('minor'),
+                         flag = wx.ALIGN_CENTER_VERTICAL | wx.RIGHT | expand)
                 if hasattr(label, "set_default"):
                     label.Bind(wx.EVT_MOUSE_EVENTS, label.set_default)
                     if hasattr(widget, "Bind"):
@@ -170,54 +492,89 @@ class PronterOptionsDialog(wx.Dialog):
                 current_row += 1
             grid.AddGrowableCol(1)
             grouppanel.SetSizer(grid)
-        sbox.Add(notebook, 1, wx.EXPAND)
-        panel.SetSizer(sbox)
+            # The size of the options dialog is determined by the first panel 'Printer settings'
+            if group == group_list[0]:
+                grouppanel.SetMinSize(grid.ComputeFittingWindowSize(grouppanel))
         topsizer = wx.BoxSizer(wx.VERTICAL)
-        topsizer.Add(panel, 1, wx.ALL | wx.EXPAND)
-        topsizer.Add(self.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALIGN_RIGHT)
-        self.SetSizerAndFit(topsizer)
-        self.SetMinSize(self.GetSize())
+        topsizer.Add(notebook, 1, wx.EXPAND | wx.ALL, get_space('minor'))
+        topsizer.Add(wx.StaticLine(self, -1, style = wx.LI_HORIZONTAL), 0, wx.EXPAND)
+        topsizer.Add(self.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALIGN_RIGHT | wx.ALL, get_space('stddlg'))
+        self.SetSizer(topsizer)
+        self.Fit()
+        self.CentreOnParent()
 
+
+notebookSelection = 0
 def PronterOptions(pronterface):
     dialog = PronterOptionsDialog(pronterface)
+    global notebookSelection
+    dialog.notebook.Selection = notebookSelection
     if dialog.ShowModal() == wx.ID_OK:
+        changed_settings = []
         for setting in pronterface.settings._all_settings():
             old_value = setting.value
             setting.update()
             if setting.value != old_value:
                 pronterface.set(setting.name, setting.value)
+                changed_settings.append(setting)
+        pronterface.on_settings_change(changed_settings)
+    notebookSelection = dialog.notebook.Selection
     dialog.Destroy()
 
 class ButtonEdit(wx.Dialog):
     """Custom button edit dialog"""
     def __init__(self, pronterface):
-        wx.Dialog.__init__(self, None, title = _("Custom button"),
-                           style = wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+        wx.Dialog.__init__(self, None, title = _("Custom Button"),
+                           style = wx.DEFAULT_DIALOG_STYLE)
         self.pronterface = pronterface
-        topsizer = wx.BoxSizer(wx.VERTICAL)
-        grid = wx.FlexGridSizer(rows = 0, cols = 2, hgap = 4, vgap = 2)
+        panel = wx.Panel(self)
+        grid = wx.FlexGridSizer(rows = 0, cols = 2, hgap = get_space('minor'), vgap = get_space('minor'))
         grid.AddGrowableCol(1, 1)
-        grid.Add(wx.StaticText(self, -1, _("Button title")), 0, wx.BOTTOM | wx.RIGHT)
-        self.name = wx.TextCtrl(self, -1, "")
+        # Title of the button
+        grid.Add(wx.StaticText(panel, -1, _("Button Title:")), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
+        self.name = wx.TextCtrl(panel, -1, "")
+        dlg_size = 260
+        self.name.SetMinSize(wx.Size(dlg_size, -1))
         grid.Add(self.name, 1, wx.EXPAND)
-        grid.Add(wx.StaticText(self, -1, _("Command")), 0, wx.BOTTOM | wx.RIGHT)
-        self.command = wx.TextCtrl(self, -1, "")
-        xbox = wx.BoxSizer(wx.HORIZONTAL)
-        xbox.Add(self.command, 1, wx.EXPAND)
+        # Colour of the button
+        grid.Add(wx.StaticText(panel, -1, _("Colour:")), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
+        coloursizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.use_colour = wx.CheckBox(panel, -1)
+        self.color = wx.ColourPickerCtrl(panel, colour=(255, 255, 255), style=wx.CLRP_USE_TEXTCTRL)
+        self.color.Disable()
+        self.use_colour.Bind(wx.EVT_CHECKBOX, self.toggle_colour)
+        coloursizer.Add(self.use_colour, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, get_space('minor'))
+        coloursizer.Add(self.color, 1, wx.EXPAND)
+        grid.Add(coloursizer, 1, wx.EXPAND)
+        # Enter commands or choose a macro
+        macrotooltip = _("Type short commands directly, enter a name for a new macro or select an existing macro from the list.")
+        commandfield = wx.StaticText(panel, -1, _("Command:"))
+        commandfield.SetToolTip(wx.ToolTip(macrotooltip))
+        grid.Add(commandfield, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT)
+        macrochoices = list(self.pronterface.macros.keys())  # add the available macros to the dropdown
+        macrochoices.insert(0, "")  # add an empty field, so that a new macro name can be entered
+        self.command = wx.ComboBox(panel, -1, "", choices = macrochoices, style = wx.CB_DROPDOWN)
+        self.command.SetToolTip(wx.ToolTip(macrotooltip))
+        commandsizer = wx.BoxSizer(wx.HORIZONTAL)
+        commandsizer.Add(self.command, 1, wx.EXPAND)
         self.command.Bind(wx.EVT_TEXT, self.macrob_enabler)
-        self.macrob = wx.Button(self, -1, "..", style = wx.BU_EXACTFIT)
-        self.macrob.Bind(wx.EVT_BUTTON, self.macrob_handler)
-        xbox.Add(self.macrob, 0)
-        grid.Add(xbox, 1, wx.EXPAND)
-        grid.Add(wx.StaticText(self, -1, _("Color")), 0, wx.BOTTOM | wx.RIGHT)
-        self.color = wx.TextCtrl(self, -1, "")
-        grid.Add(self.color, 1, wx.EXPAND)
-        topsizer.Add(grid, 0, wx.EXPAND)
-        topsizer.Add((0, 0), 1)
-        topsizer.Add(self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALIGN_CENTER)
+        self.macrobtn = wx.Button(panel, -1, "...", style = wx.BU_EXACTFIT)
+        self.macrobtn.SetMinSize((self.macrobtn.GetTextExtent('AAA').width, -1))
+        self.macrobtn.SetToolTip(wx.ToolTip(_("Create a new macro or edit an existing one.")))
+        self.macrobtn.Bind(wx.EVT_BUTTON, self.macrob_handler)
+        commandsizer.Add(self.macrobtn, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, get_space('minor'))
+        grid.Add(commandsizer, 1, wx.EXPAND)
+        panel.SetSizer(grid)
+        topsizer = wx.BoxSizer(wx.VERTICAL)
+        topsizer.Add(panel, 0, wx.EXPAND | wx.ALL, get_space('major'))
+        topsizer.Add(wx.StaticLine(self, -1, style = wx.LI_HORIZONTAL), 0, wx.EXPAND)
+        topsizer.Add(self.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALIGN_RIGHT | wx.ALL, get_space('stddlg'))
         self.SetSizer(topsizer)
+        topsizer.Fit(self)
+        self.CentreOnParent()
+        self.name.SetFocus()
 
-    def macrob_enabler(self, e):
+    def macrob_enabler(self, event):
         macro = self.command.GetValue()
         valid = False
         try:
@@ -225,7 +582,7 @@ class ButtonEdit(wx.Dialog):
                 valid = True
             elif macro in self.pronterface.macros:
                 valid = True
-            elif hasattr(self.pronterface.__class__, u"do_" + macro):
+            elif hasattr(self.pronterface.__class__, "do_" + macro):
                 valid = False
             elif len([c for c in macro if not c.isalnum() and c != "_"]):
                 valid = False
@@ -240,14 +597,18 @@ class ButtonEdit(wx.Dialog):
                 valid = False
             else:
                 valid = True
-        self.macrob.Enable(valid)
+        self.macrobtn.Enable(valid)
 
-    def macrob_handler(self, e):
+    def macrob_handler(self, event):
         macro = self.command.GetValue()
         macro = self.pronterface.edit_macro(macro)
         self.command.SetValue(macro)
         if self.name.GetValue() == "":
             self.name.SetValue(macro)
+
+    def toggle_colour(self, event):
+        self.color.Enable(self.use_colour.GetValue())
+
 
 class TempGauge(wx.Panel):
 
@@ -257,7 +618,7 @@ class TempGauge(wx.Panel):
         self.Bind(wx.EVT_PAINT, self.paint)
         self.SetBackgroundStyle(wx.BG_STYLE_CUSTOM)
         self.bgcolor = wx.Colour()
-        self.bgcolor.SetFromName(bgcolor)
+        self.bgcolor.Set(bgcolor)
         self.width, self.height = size
         self.title = title
         self.max = maxval
@@ -280,25 +641,27 @@ class TempGauge(wx.Panel):
         wx.CallAfter(self.Refresh)
 
     def interpolatedColour(self, val, vmin, vmid, vmax, cmin, cmid, cmax):
-        if val < vmin: return cmin
-        if val > vmax: return cmax
+        if val < vmin:
+            return cmin
+        if val > vmax:
+            return cmax
         if val <= vmid:
             lo, hi, val, valhi = cmin, cmid, val - vmin, vmid - vmin
         else:
             lo, hi, val, valhi = cmid, cmax, val - vmid, vmax - vmid
         vv = float(val) / valhi
         rgb = lo.Red() + (hi.Red() - lo.Red()) * vv, lo.Green() + (hi.Green() - lo.Green()) * vv, lo.Blue() + (hi.Blue() - lo.Blue()) * vv
-        rgb = map(lambda x: x * 0.8, rgb)
-        return wx.Colour(*map(int, rgb))
+        rgb = (int(x * 0.8) for x in rgb)
+        return wx.Colour(*rgb)
 
-    def paint(self, ev):
-        self.width, self.height = self.GetClientSizeTuple()
+    def paint(self, event):
+        self.width, self.height = self.GetClientSize()
         self.recalc()
         x0, y0, x1, y1, xE, yE = 1, 1, self.ypt + 1, 1, self.width + 1 - 2, 20
         dc = wx.PaintDC(self)
         dc.SetBackground(wx.Brush(self.bgcolor))
         dc.Clear()
-        cold, medium, hot = wx.Colour(0, 167, 223), wx.Colour(239, 233, 119), wx.Colour(210, 50.100)
+        cold, medium, hot = wx.Colour(0, 167, 223), wx.Colour(239, 233, 119), wx.Colour(210, 50, 0)
         # gauge1, gauge2 = wx.Colour(255, 255, 210), (self.gaugeColour or wx.Colour(234, 82, 0))
         gauge1 = wx.Colour(255, 255, 210)
         shadow1, shadow2 = wx.Colour(110, 110, 110), self.bgcolor
@@ -350,7 +713,7 @@ class TempGauge(wx.Panel):
         setp_path.AddLineToPoint(setpoint, yE - 5)
         gc.DrawPath(setp_path)
         # draw readout
-        text = u"T\u00B0 %u/%u" % (self.value, self.setpoint)
+        text = "T\u00B0 %u/%u" % (self.value, self.setpoint)
         # gc.SetFont(gc.CreateFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD), wx.WHITE))
         # gc.DrawText(text, 29,-2)
         gc.SetFont(gc.CreateFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD), wx.WHITE))
@@ -360,7 +723,7 @@ class TempGauge(wx.Panel):
         gc.DrawText(self.title, x0 + 18, y0 + 3)
         gc.DrawText(text, x0 + 118, y0 + 3)
 
-class SpecialButton(object):
+class SpecialButton:
 
     label = None
     command = None

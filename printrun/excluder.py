@@ -22,16 +22,27 @@ install_locale('pronterface')
 class ExcluderWindow(gviz.GvizWindow):
 
     def __init__(self, excluder, *args, **kwargs):
-        super(ExcluderWindow, self).__init__(*args, **kwargs)
-        self.SetTitle(_("Part excluder: draw rectangles where print instructions should be ignored"))
-        self.toolbar.AddLabelTool(128, " " + _("Reset selection"),
-                                  wx.Image(imagefile('reset.png'), wx.BITMAP_TYPE_PNG).ConvertToBitmap(),
-                                  shortHelp = _("Reset selection"),
-                                  longHelp = "")
-        self.Bind(wx.EVT_TOOL, self.reset_selection, id = 128)
+        super().__init__(*args, **kwargs)
+        self.SetTitle(_("Print Excluder"))
         self.parent = excluder
+
+        tool_pos = self.toolbar.GetToolPos(6)
+        self.toolbar.InsertTool(tool_pos, 8, _('Reset Selection'),
+                                wx.Image(imagefile('reset.png'), wx.BITMAP_TYPE_PNG).ConvertToBitmap(),
+                                shortHelp = _("Reset Selection"))
+        self.toolbar.DeleteTool(6)
+        self.toolbar.DeleteTool(7)
+        self.toolbar.Realize()
+        minsize = self.toolbar.GetEffectiveMinSize().width
+        self.SetMinClientSize((minsize, minsize))
+        self.p.SetToolTip(
+            _("Draw rectangles where print instructions should be ignored.") +
+            _("\nExcluder always affects all layers, layer setting is disregarded."))
+
         self.p.paint_overlay = self.paint_selection
         self.p.layerup()
+
+        self.CenterOnParent()
 
     def real_to_gcode(self, x, y):
         return (x + self.p.build_dimensions[3],
@@ -46,7 +57,7 @@ class ExcluderWindow(gviz.GvizWindow):
            or event.ButtonUp(wx.MOUSE_BTN_RIGHT):
             self.initpos = None
         elif event.Dragging() and event.RightIsDown():
-            e = event.GetPositionTuple()
+            e = event.GetPosition()
             if not self.initpos or not hasattr(self, "basetrans"):
                 self.initpos = e
                 self.basetrans = self.p.translate
@@ -55,7 +66,7 @@ class ExcluderWindow(gviz.GvizWindow):
             self.p.dirty = 1
             wx.CallAfter(self.p.Refresh)
         elif event.Dragging() and event.LeftIsDown():
-            x, y = event.GetPositionTuple()
+            x, y = event.GetPosition()
             if not self.initpos:
                 self.basetrans = self.p.translate
             x = (x - self.basetrans[0]) / self.p.scale[0]
@@ -76,6 +87,10 @@ class ExcluderWindow(gviz.GvizWindow):
             event.Skip()
 
     def _line_scaler(self, orig):
+        # Arguments:
+        #   orig: coordinates of two corners of a rectangle (x0, y0, x1, y1)
+        # Returns:
+        #   rectangle coordinates as (x, y, width, height)
         x0, y0 = self.gcode_to_real(orig[0], orig[1])
         x0 = self.p.scale[0] * x0 + self.p.translate[0]
         y0 = self.p.scale[1] * y0 + self.p.translate[1]
@@ -84,7 +99,8 @@ class ExcluderWindow(gviz.GvizWindow):
         y1 = self.p.scale[1] * y1 + self.p.translate[1]
         width = max(x0, x1) - min(x0, x1) + 1
         height = max(y0, y1) - min(y0, y1) + 1
-        return (min(x0, x1), min(y0, y1), width, height,)
+        rectangle = (min(x0, x1), min(y0, y1), width, height)
+        return tuple(map(int, rectangle))
 
     def paint_selection(self, dc):
         dc = wx.GCDC(dc)
@@ -92,12 +108,7 @@ class ExcluderWindow(gviz.GvizWindow):
         dc.DrawRectangleList([self._line_scaler(rect)
                               for rect in self.parent.rectangles],
                              None, wx.Brush((200, 200, 200, 150)))
-
-    def reset_selection(self, event):
-        self.parent.rectangles = []
-        wx.CallAfter(self.p.Refresh)
-
-class Excluder(object):
+class Excluder:
 
     def __init__(self):
         self.rectangles = []
@@ -118,9 +129,10 @@ class Excluder(object):
             self.window.Destroy()
             self.window = None
 
+
 if __name__ == '__main__':
     import sys
-    import gcoder
+    from . import gcoder
     gcode = gcoder.GCode(open(sys.argv[1]))
     app = wx.App(False)
     ex = Excluder()

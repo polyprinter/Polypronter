@@ -39,10 +39,16 @@ else:
         inhibit_sleep_token = None
         bus = dbus.SessionBus()
         try:
-            # GNOME uses the right object path, try it first
-            service_name = "org.freedesktop.ScreenSaver"
-            proxy = bus.get_object(service_name,
-                                   "/org/freedesktop/ScreenSaver")
+            if os.environ.get('DESKTOP_SESSION') == "mate":
+                # Mate uses a special service
+                service_name = "org.mate.ScreenSaver"
+                object_path = "/org/mate/ScreenSaver"
+            else:
+                # standard service name
+                service_name = "org.freedesktop.ScreenSaver"
+                object_path = "/org/freedesktop/ScreenSaver"
+            # GNOME and Mate use the right object path, try it first
+            proxy = bus.get_object(service_name, object_path)
             inhibit_sleep_handler = dbus.Interface(proxy, service_name)
             # Do a test run
             token = inhibit_sleep_handler.Inhibit("printrun", "test")
@@ -65,7 +71,7 @@ else:
                 return
             inhibit_sleep_handler.UnInhibit(inhibit_sleep_token)
             inhibit_sleep_token = None
-    except Exception, e:
+    except Exception as e:
         logging.warning("Could not setup DBus for sleep inhibition: %s" % e)
 
         def inhibit_sleep(reason):
@@ -107,7 +113,7 @@ try:
                     set_nice(i, p)
                     high_priority_nice = i
                     break
-                except psutil.AccessDenied, e:
+                except psutil.AccessDenied as e:
                     pass
             set_nice(orig_nice, p)
 
@@ -132,7 +138,7 @@ try:
     def powerset_print_stop():
         reset_priority()
         deinhibit_sleep()
-except ImportError, e:
+except ImportError as e:
     logging.warning("psutil unavailable, could not import power utils:" + str(e))
 
     def powerset_print_start(reason):

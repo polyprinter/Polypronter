@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # This file is part of the Printrun suite.
 #
 # Printrun is free software: you can redistribute it and/or modify
@@ -39,54 +37,109 @@ from pyglet.gl import glEnable, glDisable, GL_LIGHTING, glLightfv, \
     GL_MODELVIEW_MATRIX, GL_ONE_MINUS_SRC_ALPHA, glOrtho, \
     GL_PROJECTION, GL_PROJECTION_MATRIX, glScalef, \
     GL_SRC_ALPHA, glTranslatef, gluPerspective, gluUnProject, \
-    glViewport, GL_VIEWPORT
-from pyglet import gl
-from .trackball import trackball, mulquat
-from .libtatlin.actors import vec
+    glViewport, GL_VIEWPORT, glPushMatrix, glPopMatrix, \
+    glBegin, glVertex2f, glVertex3f, glEnd, GL_LINE_LOOP, glColor3f, \
+    GL_LINE_STIPPLE, glColor4f, glLineStipple
 
-class wxGLPanel(wx.Panel):
+from pyglet import gl
+from .trackball import trackball, mulquat, axis_to_quat
+from .libtatlin.actors import vec
+from pyglet.gl.glu import gluOrtho2D
+
+# When Subclassing wx.Window in Windows the focus goes to the wx.Window
+# instead of GLCanvas and it does not draw the focus rectangle and
+# does not consume used keystrokes
+# BASE_CLASS = wx.Window
+# Subclassing Panel solves problem In Windows
+BASE_CLASS = wx.Panel
+# BASE_CLASS = wx.ScrolledWindow
+# BASE_CLASS = glcanvas.GLCanvas
+class wxGLPanel(BASE_CLASS):
     '''A simple class for using OpenGL with wxPython.'''
 
+    orbit_control = True
     orthographic = True
     color_background = (0.98, 0.98, 0.78, 1)
     do_lights = True
 
-    def __init__(self, parent, id, pos = wx.DefaultPosition,
+    def __init__(self, parent, pos = wx.DefaultPosition,
                  size = wx.DefaultSize, style = 0,
                  antialias_samples = 0):
-        # Forcing a no full repaint to stop flickering
-        style = style | wx.NO_FULL_REPAINT_ON_RESIZE
-        super(wxGLPanel, self).__init__(parent, id, pos, size, style)
+        # Full repaint should not be a performance problem
+        #TODO: test on windows, tested in Ubuntu
+        style = style | wx.FULL_REPAINT_ON_RESIZE
 
         self.GLinitialized = False
         self.mview_initialized = False
-        attribList = (glcanvas.WX_GL_RGBA,  # RGBA
+        attribList = [glcanvas.WX_GL_RGBA,  # RGBA
                       glcanvas.WX_GL_DOUBLEBUFFER,  # Double Buffered
-                      glcanvas.WX_GL_DEPTH_SIZE, 24)  # 24 bit
+                      glcanvas.WX_GL_DEPTH_SIZE, 24  # 24 bit
+                      ]
 
         if antialias_samples > 0 and hasattr(glcanvas, "WX_GL_SAMPLE_BUFFERS"):
             attribList += (glcanvas.WX_GL_SAMPLE_BUFFERS, 1,
                            glcanvas.WX_GL_SAMPLES, antialias_samples)
 
-        self.width = None
-        self.height = None
+        attribList.append(0)
 
-        self.sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.canvas = glcanvas.GLCanvas(self, attribList = attribList)
+        if BASE_CLASS is glcanvas.GLCanvas:
+            super().__init__(parent, wx.ID_ANY, attribList, pos, size, style)
+            self.canvas = self
+        else:
+            super().__init__(parent, wx.ID_ANY, pos, size, style)
+            self.canvas = glcanvas.GLCanvas(self, wx.ID_ANY, attribList, pos, size, style)
+
+        self.width = self.height = None
+
         self.context = glcanvas.GLContext(self.canvas)
-        self.sizer.Add(self.canvas, 1, wx.EXPAND)
-        self.SetSizerAndFit(self.sizer)
 
         self.rot_lock = Lock()
         self.basequat = [0, 0, 0, 1]
         self.zoom_factor = 1.0
+        self.angle_z = 0
+        self.angle_x = 0
 
         self.gl_broken = False
 
         # bind events
-        self.canvas.Bind(wx.EVT_ERASE_BACKGROUND, self.processEraseBackgroundEvent)
         self.canvas.Bind(wx.EVT_SIZE, self.processSizeEvent)
+        if self.canvas is not self:
+            self.Bind(wx.EVT_SIZE, self.OnScrollSize)
+            # do not focus parent (panel like) but its canvas
+            self.SetCanFocus(False)
+
+        self.canvas.Bind(wx.EVT_ERASE_BACKGROUND, self.processEraseBackgroundEvent)
+        # In wxWidgets 3.0.x there is a clipping bug during resizing
+        # which could be affected by painting the container
+        # self.Bind(wx.EVT_PAINT, self.processPaintEvent)
+        # Upgrade to wxPython 4.1 recommended
         self.canvas.Bind(wx.EVT_PAINT, self.processPaintEvent)
+
+        self.canvas.Bind(wx.EVT_SET_FOCUS, self.processFocus)
+        self.canvas.Bind(wx.EVT_KILL_FOCUS, self.processKillFocus)
+
+    def processFocus(self, ev):
+        # print('processFocus')
+        self.Refresh(False)
+        ev.Skip()
+
+    def processKillFocus(self, ev):
+        # print('processKillFocus')
+        self.Refresh(False)
+        ev.Skip()
+    # def processIdle(self, event):
+    #     print('processIdle')
+    #     event.Skip()
+
+    def Layout(self):
+        return super().Layout()
+
+    def Refresh(self, eraseback=True):
+        # print('Refresh')
+        return super().Refresh(eraseback)
+
+    def OnScrollSize(self, event):
+        self.canvas.SetSize(event.Size)
 
     def processEraseBackgroundEvent(self, event):
         '''Process the erase background event.'''
@@ -94,26 +147,26 @@ class wxGLPanel(wx.Panel):
 
     def processSizeEvent(self, event):
         '''Process the resize event.'''
-        if self.IsFrozen():
-            event.Skip()
-            return
-        if (wx.VERSION > (2, 9) and self.canvas.IsShownOnScreen()) or self.canvas.GetContext():
+
+        # print('processSizeEvent frozen', self.IsFrozen(), event.Size.x, self.ClientSize.x)
+        if not self.IsFrozen() and self.canvas.IsShownOnScreen():
             # Make sure the frame is shown before calling SetCurrent.
             self.canvas.SetCurrent(self.context)
             self.OnReshape()
-            self.Refresh(False)
-            timer = wx.CallLater(100, self.Refresh)
-            timer.Start()
+
+            # self.Refresh(False)
+            # print('Refresh')
         event.Skip()
 
     def processPaintEvent(self, event):
         '''Process the drawing event.'''
+        # print('wxGLPanel.processPaintEvent', self.ClientSize.Width)
         self.canvas.SetCurrent(self.context)
 
         if not self.gl_broken:
             try:
                 self.OnInitGL()
-                self.OnDraw()
+                self.DrawCanvas()
             except pyglet.gl.lib.GLException:
                 self.gl_broken = True
                 logging.error(_("OpenGL failed, disabling it:")
@@ -124,7 +177,7 @@ class wxGLPanel(wx.Panel):
         # clean up the pyglet OpenGL context
         self.pygletcontext.destroy()
         # call the super method
-        super(wxGLPanel, self).Destroy()
+        super().Destroy()
 
     # ==========================================================================
     # GLFrame OpenGL Event Handlers
@@ -152,7 +205,7 @@ class wxGLPanel(wx.Panel):
 
     def OnReshape(self):
         """Reshape the OpenGL viewport based on the size of the window"""
-        size = self.GetClientSize()
+        size = self.GetClientSize() * self.GetContentScaleFactor()
         oldwidth, oldheight = self.width, self.height
         width, height = size.width, size.height
         if width < 1 or height < 1:
@@ -160,6 +213,7 @@ class wxGLPanel(wx.Panel):
         self.width = max(float(width), 1.0)
         self.height = max(float(height), 1.0)
         self.OnInitGL(call_reshape = False)
+        # print('glViewport', width)
         glViewport(0, 0, width, height)
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
@@ -214,22 +268,55 @@ class wxGLPanel(wx.Panel):
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         self.setup_lights()
-        if self.orthographic:
-            wratio = self.width / self.dist
-            hratio = self.height / self.dist
-            minratio = float(min(wratio, hratio))
-            self.zoom_factor = 1.0
-            self.zoomed_width = wratio / minratio
-            self.zoomed_height = hratio / minratio
-            glScalef(factor * minratio, factor * minratio, 1)
 
-    def OnDraw(self, *args, **kwargs):
+        wratio = self.width / self.dist
+        hratio = self.height / self.dist
+        minratio = float(min(wratio, hratio))
+        self.zoom_factor = 1.0
+        self.zoomed_width = wratio / minratio
+        self.zoomed_height = hratio / minratio
+        glScalef(factor * minratio, factor * minratio, 1)
+
+    def DrawCanvas(self):
         """Draw the window."""
+        #import time
+        #start = time.perf_counter()
+        # print('DrawCanvas', self.canvas.GetClientRect())
         self.pygletcontext.set_current()
         glClearColor(*self.color_background)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         self.draw_objects()
+
+        if self.canvas.HasFocus():
+            self.drawFocus()
         self.canvas.SwapBuffers()
+        #print('Draw took', '%.2f'%(time.perf_counter()-start))
+
+    def drawFocus(self):
+        glColor4f(0, 0, 0, 0.4)
+
+        glPushMatrix()
+        glLoadIdentity()
+
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        gluOrtho2D(0, self.width, 0, self.height)
+
+        glLineStipple(1, 0xf0f0)
+        glEnable(GL_LINE_STIPPLE)
+        glBegin(GL_LINE_LOOP)
+        glVertex2f(1, 0)
+        glVertex2f(self.width, 0)
+        glVertex2f(self.width, self.height-1)
+        glVertex2f(1, self.height-1)
+        glEnd()
+        glDisable(GL_LINE_STIPPLE)
+
+        glPopMatrix() # restore PROJECTION
+
+        glMatrixMode(GL_MODELVIEW)
+        glPopMatrix()
 
     # ==========================================================================
     # To be implemented by a sub class
@@ -239,7 +326,7 @@ class wxGLPanel(wx.Panel):
         pass
 
     def update_object_resize(self):
-        '''called when the window recieves only if opengl is initialized'''
+        '''called when the window receives only if opengl is initialized'''
         pass
 
     def draw_objects(self):
@@ -317,35 +404,56 @@ class wxGLPanel(wx.Panel):
         self.zoom_factor *= factor
         if to:
             glTranslatef(-delta_x, -delta_y, 0)
-        wx.CallAfter(self.Refresh)
+        # For wxPython (<4.1) and GTK:
+        # when you resize (enlarge) 3d view fast towards the log pane
+        # sash garbage may remain in GLCanvas
+        # The following refresh clears it at the cost of
+        # doubled frame draws.
+        # wx.CallAfter(self.Refresh)
+        self.Refresh(False)
 
     def zoom_to_center(self, factor):
         self.canvas.SetCurrent(self.context)
         x, y, _ = self.mouse_to_3d(self.width / 2, self.height / 2)
         self.zoom(factor, (x, y))
 
+    def orbit(self, p1x, p1y, p2x, p2y):
+        rz = p2x-p1x
+        self.angle_z-=rz
+        rotz = axis_to_quat([0.0,0.0,1.0],self.angle_z)
+
+        rx = p2y-p1y
+        self.angle_x+=rx
+        rota = axis_to_quat([1.0,0.0,0.0],self.angle_x)
+        return mulquat(rotz,rota)
+
     def handle_rotation(self, event):
+        content_scale_factor = self.GetContentScaleFactor()
         if self.initpos is None:
-            self.initpos = event.GetPositionTuple()
+            self.initpos = event.GetPosition() * content_scale_factor
         else:
             p1 = self.initpos
-            p2 = event.GetPositionTuple()
-            sz = self.GetClientSize()
-            p1x = float(p1[0]) / (sz[0] / 2) - 1
-            p1y = 1 - float(p1[1]) / (sz[1] / 2)
-            p2x = float(p2[0]) / (sz[0] / 2) - 1
-            p2y = 1 - float(p2[1]) / (sz[1] / 2)
+            p2 = event.GetPosition() * content_scale_factor
+            sz = self.GetClientSize() * content_scale_factor
+            p1x = p1[0] / (sz[0] / 2) - 1
+            p1y = 1 - p1[1] / (sz[1] / 2)
+            p2x = p2[0] / (sz[0] / 2) - 1
+            p2y = 1 - p2[1] / (sz[1] / 2)
             quat = trackball(p1x, p1y, p2x, p2y, self.dist / 250.0)
             with self.rot_lock:
-                self.basequat = mulquat(self.basequat, quat)
+                if self.orbit_control:
+                    self.basequat = self.orbit(p1x, p1y, p2x, p2y)
+                else:
+                    self.basequat = mulquat(self.basequat, quat)
             self.initpos = p2
 
     def handle_translation(self, event):
+        content_scale_factor = self.GetContentScaleFactor()
         if self.initpos is None:
-            self.initpos = event.GetPositionTuple()
+            self.initpos = event.GetPosition() * content_scale_factor
         else:
             p1 = self.initpos
-            p2 = event.GetPositionTuple()
+            p2 = event.GetPosition() * content_scale_factor
             if self.orthographic:
                 x1, y1, _ = self.mouse_to_3d(p1[0], p1[1])
                 x2, y2, _ = self.mouse_to_3d(p2[0], p2[1])

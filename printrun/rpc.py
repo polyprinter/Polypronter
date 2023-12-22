@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Printrun.  If not, see <http://www.gnu.org/licenses/>.
 
-from SimpleXMLRPCServer import SimpleXMLRPCServer
+from xmlrpc.server import SimpleXMLRPCServer
 from threading import Thread
 import socket
 import logging
@@ -23,7 +23,7 @@ install_locale('pronterface')
 
 RPC_PORT = 7978
 
-class ProntRPC(object):
+class ProntRPC:
 
     server = None
 
@@ -45,6 +45,16 @@ class ProntRPC(object):
                 else:
                     raise
         self.server.register_function(self.get_status, 'status')
+        self.server.register_function(self.set_extruder_temperature,'settemp')
+        self.server.register_function(self.set_bed_temperature,'setbedtemp')
+        self.server.register_function(self.load_file,'load_file')
+        self.server.register_function(self.startprint,'startprint')
+        self.server.register_function(self.pauseprint,'pauseprint')
+        self.server.register_function(self.resumeprint,'resumeprint')
+        self.server.register_function(self.sendhome,'sendhome')
+        self.server.register_function(self.connect,'connect')
+        self.server.register_function(self.disconnect, 'disconnect')
+        self.server.register_function(self.send, 'send')
         self.thread = Thread(target = self.run_server)
         self.thread.start()
 
@@ -76,3 +86,30 @@ class ProntRPC(object):
                 "temps": temps,
                 "z": z,
                 }
+    def set_extruder_temperature(self, targettemp):
+        if self.pronsole.p.online:
+           self.pronsole.p.send_now("M104 S" + targettemp)
+
+    def set_bed_temperature(self,targettemp):
+        if self.pronsole.p.online:
+           self.pronsole.p.send_now("M140 S" + targettemp)
+
+    def load_file(self,filename):
+        self.pronsole.do_load(filename)
+
+    def startprint(self):
+        self.pronsole.do_print("")
+
+    def pauseprint(self):
+        self.pronsole.do_pause("")
+
+    def resumeprint(self):
+        self.pronsole.do_resume("")
+    def sendhome(self):
+        self.pronsole.do_home("")
+    def connect(self):
+        self.pronsole.do_connect("")
+    def disconnect(self):
+        self.pronsole.do_disconnect("")
+    def send(self, command):
+        self.pronsole.p.send_now(command)

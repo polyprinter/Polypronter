@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # This file is part of the Printrun suite.
 #
 # Printrun is free software: you can redistribute it and/or modify
@@ -17,6 +15,7 @@
 
 import wx
 from math import log10, floor, ceil
+from bisect import bisect_left
 
 from printrun.utils import install_locale
 install_locale('pronterface')
@@ -25,13 +24,25 @@ from .bufferedcanvas import BufferedCanvas
 
 class GraphWindow(wx.Frame):
     def __init__(self, root, parent_graph = None, size = (600, 600)):
-        super(GraphWindow, self).__init__(None, title = _("Temperature graph"),
+        super().__init__(None, title = _("Temperature graph"),
                                           size = size)
-        panel = wx.Panel(self, -1)
+        self.parentg = parent_graph
+        panel = wx.Panel(self)
         vbox = wx.BoxSizer(wx.VERTICAL)
         self.graph = Graph(panel, wx.ID_ANY, root, parent_graph = parent_graph)
         vbox.Add(self.graph, 1, wx.EXPAND)
         panel.SetSizer(vbox)
+
+    def Destroy(self):
+        self.graph.StopPlotting()
+        if self.parentg is not None:
+            self.parentg.window=None
+        return super().Destroy()
+
+    def __del__(self):
+        if self.parentg is not None:
+            self.parentg.window=None
+        self.graph.StopPlotting()
 
 class Graph(BufferedCanvas):
     '''A class to show a Graph with Pronterface.'''
@@ -40,7 +51,7 @@ class Graph(BufferedCanvas):
                  size = wx.Size(150, 80), style = 0, parent_graph = None):
         # Forcing a no full repaint to stop flickering
         style = style | wx.NO_FULL_REPAINT_ON_RESIZE
-        super(Graph, self).__init__(parent, id, pos, size, style)
+        super().__init__(parent, id, pos, size, style)
         self.root = root
 
         if parent_graph is not None:
@@ -50,7 +61,7 @@ class Graph(BufferedCanvas):
             self.extruder1targettemps = parent_graph.extruder1targettemps
             self.bedtemps = parent_graph.bedtemps
             self.bedtargettemps = parent_graph.bedtargettemps
-	    self.fanpowers=parent_graph.fanpowers
+            self.fanpowers=parent_graph.fanpowers
         else:
             self.extruder0temps = [0]
             self.extruder0targettemps = [0]
@@ -58,10 +69,11 @@ class Graph(BufferedCanvas):
             self.extruder1targettemps = [0]
             self.bedtemps = [0]
             self.bedtargettemps = [0]
-	    self.fanpowers= [0]
+            self.fanpowers= [0]
 
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.updateTemperatures, self.timer)
+        self.Bind(wx.EVT_WINDOW_DESTROY, self.processDestroy)
 
         self.minyvalue = 0
         self.maxyvalue = 260
@@ -76,9 +88,16 @@ class Graph(BufferedCanvas):
         self.xsteps = 60  # Covering 1 minute in the graph
 
         self.window = None
+        self.reserved = []
+
+    def processDestroy(self, event):
+        # print('processDestroy')
+        self.StopPlotting()
+        self.Unbind(wx.EVT_TIMER)
+        event.Skip()
 
     def show_graph_window(self, event = None):
-        if not self.window:
+        if self.window is None or not self.window:
             self.window = GraphWindow(self.root, self)
             self.window.Show()
             if self.timer.IsRunning():
@@ -90,13 +109,14 @@ class Graph(BufferedCanvas):
         if self.window: self.window.Close()
 
     def updateTemperatures(self, event):
+        # print('updateTemperatures')
         self.AddBedTemperature(self.bedtemps[-1])
         self.AddBedTargetTemperature(self.bedtargettemps[-1])
         self.AddExtruder0Temperature(self.extruder0temps[-1])
         self.AddExtruder0TargetTemperature(self.extruder0targettemps[-1])
         self.AddExtruder1Temperature(self.extruder1temps[-1])
         self.AddExtruder1TargetTemperature(self.extruder1targettemps[-1])
-	self.AddFanPower(self.fanpowers[-1])
+        self.AddFanPower(self.fanpowers[-1])
         if self.rescaley:
             self._ybounds.update()
         self.Refresh()
@@ -120,36 +140,37 @@ class Graph(BufferedCanvas):
         # gc.DrawLines(wx.Point(0, 0), wx.Point(50, 10))
 
         font = wx.Font(10, wx.DEFAULT, wx.NORMAL, wx.BOLD)
-        gc.SetFont(font, wx.Colour(23, 44, 44))
+        gc.SetFont(font, wx.Colour(self.root.settings.graph_color_text))
 
         # draw vertical bars
-        dc.SetPen(wx.Pen(wx.Colour(225, 225, 225), 1))
+        dc.SetPen(wx.Pen(wx.Colour(self.root.settings.graph_color_grid), 1))
+        xscale = float(self.width - 1) / (self.xbars - 1)
         for x in range(self.xbars + 1):
-            dc.DrawLine(x * (float(self.width - 1) / (self.xbars - 1)),
-                        0,
-                        x * (float(self.width - 1) / (self.xbars - 1)),
-                        self.height)
+            x = x * xscale
+            dc.DrawLine(int(x), 0, int(x), self.height)
 
         # draw horizontal bars
         spacing = self._calculate_spacing()  # spacing between bars, in degrees
         yspan = self.maxyvalue - self.minyvalue
         ybars = int(yspan / spacing)  # Should be close to self.ybars
         firstbar = int(ceil(self.minyvalue / spacing))  # in degrees
-        dc.SetPen(wx.Pen(wx.Colour(225, 225, 225), 1))
+        dc.SetPen(wx.Pen(wx.Colour(self.root.settings.graph_color_grid), 1))
         for y in range(firstbar, firstbar + ybars + 1):
             # y_pos = y*(float(self.height)/self.ybars)
             degrees = y * spacing
             y_pos = self._y_pos(degrees)
-            dc.DrawLine(0, y_pos, self.width, y_pos)
-            gc.DrawText(unicode(y * spacing),
-                        1, y_pos - (font.GetPointSize() / 2))
+            dc.DrawLine(0, int(y_pos), self.width, int(y_pos))
+            label = str(y * spacing)
+            label_y = y_pos - font.GetPointSize() / 2
+            self.layoutText(label, 1, label_y, gc)
+            gc.DrawText(label, 1, label_y)
 
-        if self.timer.IsRunning() is False:
+        if not self.timer.IsRunning():
             font = wx.Font(14, wx.DEFAULT, wx.NORMAL, wx.BOLD)
             gc.SetFont(font, wx.Colour(3, 4, 4))
             gc.DrawText("Graph offline",
-                        self.width / 2 - (font.GetPointSize() * 3),
-                        self.height / 2 - (font.GetPointSize() * 1))
+                        self.width / 2 - font.GetPointSize() * 3,
+                        self.height / 2 - font.GetPointSize() * 1)
 
         # dc.DrawCircle(50, 50, 1)
 
@@ -186,66 +207,121 @@ class Graph(BufferedCanvas):
             return 10 ** (exponent + 1)
 
     def drawtemperature(self, dc, gc, temperature_list,
-                        text, text_xoffset, r, g, b, a):
-        if self.timer.IsRunning() is False:
-            dc.SetPen(wx.Pen(wx.Colour(128, 128, 128, 128), 1))
-        else:
-            dc.SetPen(wx.Pen(wx.Colour(r, g, b, a), 1))
+                        text, text_xoffset, color):
+        rgba = wx.Colour(color if self.timer.IsRunning() else '#80808080')
+        dc.SetPen(wx.Pen(rgba, 1))
 
         x_add = float(self.width) / self.xsteps
         x_pos = 0.0
         lastxvalue = 0.0
         lastyvalue = temperature_list[-1]
 
-        for temperature in (temperature_list):
+        for temperature in temperature_list:
             y_pos = self._y_pos(temperature)
-            if (x_pos > 0.0):  # One need 2 points to draw a line.
-                dc.DrawLine(lastxvalue, lastyvalue, x_pos, y_pos)
+            if x_pos > 0:  # One need 2 points to draw a line.
+                dc.DrawLine(int(lastxvalue), int(lastyvalue), int(x_pos), int(y_pos))
 
             lastxvalue = x_pos
-            x_pos = float(x_pos) + x_add
+            x_pos += x_add
             lastyvalue = y_pos
 
-        if len(text) > 0:
+        if text:
             font = wx.Font(8, wx.DEFAULT, wx.NORMAL, wx.BOLD)
             # font = wx.Font(8, wx.DEFAULT, wx.NORMAL, wx.NORMAL)
-            if self.timer.IsRunning() is False:
-                gc.SetFont(font, wx.Colour(128, 128, 128))
-            else:
-                gc.SetFont(font, wx.Colour(r, g, b))
+            gc.SetFont(font, wx.Colour(rgba.RGB))
 
-            text_size = len(text) * text_xoffset + 1
-            gc.DrawText(text,
-                        x_pos - x_add - (font.GetPointSize() * text_size),
-                        lastyvalue - (font.GetPointSize() / 2))
+            pos = self.layoutText(text, lastxvalue, lastyvalue, gc)
+            gc.DrawText(text, pos.x, pos.y)
+
+    def layoutRect(self, rc):
+        res = LtRect(rc)
+        reserved = sorted((rs for rs in self.reserved
+            if not (rc.bottom < rs.top or rc.top > rs.bottom)),
+            key=wx.Rect.GetLeft)
+        self.boundRect(res)
+        # search to the left for gaps large enough to accommodate res
+        rci = bisect_left(reserved, res)
+
+        for i in range(rci, len(reserved)-1):
+            res.x = reserved[i].right + 1
+            if res.right < reserved[i+1].left:
+                #found good res
+                break
+        else:
+            # did not find gap to the right
+            if reserved:
+                #try to respect rc.x at the cost of a gap (50...Bed)
+                if res.left < reserved[-1].right:
+                    res.x = reserved[-1].right + 1
+                    if res.right >= self.width:
+                        #goes beyond window bounds
+                        # try to the left
+                        for i in range(min(rci, len(reserved)-1), 0, -1):
+                            res.x = reserved[i].left - rc.width
+                            if reserved[i-1].right < res.left:
+                                break
+                        else:
+                            res = LtRect(self.layoutRectY(rc))
+
+        self.reserved.append(res)
+        return res
+
+    def boundRect(self, rc):
+        rc.x = min(rc.x, self.width - rc.width)
+        return rc
+
+    def layoutRectY(self, rc):
+        top = self.height
+        bottom = 0
+        collision = False
+        res = LtRect(rc)
+        res.x = max(self.gridLabelsRight+1, min(rc.x, self.width-rc.width))
+        for rs in self.reserved:
+            if not (res.right < rs.left or res.left > rs.right):
+                collision = True
+                top = min(top, rs.Top)
+                bottom = max(bottom, rs.bottom)
+        if collision:
+            res.y = top - rc.height
+            if res.y < 0:
+                res.y = bottom+1
+                if res.bottom >= self.height:
+                    res.y = rc.y
+        return res
+
+    def layoutText(self, text, x, y, gc):
+        ext = gc.GetTextExtent(text)
+        rc = self.layoutRect(wx.Rect(int(x), int(y), int(ext[0]), int(ext[1])))
+        # print('layoutText', text, rc.TopLeft)
+        return rc
 
     def drawfanpower(self, dc, gc):
         self.drawtemperature(dc, gc, self.fanpowers,
-                             "Fan", 1, 0, 0, 0, 128)
+                             "Fan", 1, self.root.settings.graph_color_fan)
 
     def drawbedtemp(self, dc, gc):
         self.drawtemperature(dc, gc, self.bedtemps,
-                             "Bed", 2, 255, 0, 0, 128)
+                             "Bed", 2, self.root.settings.graph_color_bedtemp)
 
     def drawbedtargettemp(self, dc, gc):
         self.drawtemperature(dc, gc, self.bedtargettemps,
-                             "Bed Target", 2, 255, 120, 0, 128)
+                             "Bed Target", 2, self.root.settings.graph_color_bedtarget)
 
     def drawextruder0temp(self, dc, gc):
         self.drawtemperature(dc, gc, self.extruder0temps,
-                             "Ex0", 1, 0, 155, 255, 128)
+                             "Ex0", 1, self.root.settings.graph_color_ex0temp)
 
     def drawextruder0targettemp(self, dc, gc):
         self.drawtemperature(dc, gc, self.extruder0targettemps,
-                             "Ex0 Target", 2, 0, 5, 255, 128)
+                             "Ex0 Target", 2, self.root.settings.graph_color_ex0target)
 
     def drawextruder1temp(self, dc, gc):
         self.drawtemperature(dc, gc, self.extruder1temps,
-                             "Ex1", 3, 55, 55, 0, 128)
+                             "Ex1", 3, self.root.settings.graph_color_ex1temp)
 
     def drawextruder1targettemp(self, dc, gc):
         self.drawtemperature(dc, gc, self.extruder1targettemps,
-                             "Ex1 Target", 2, 55, 55, 0, 128)
+                             "Ex1 Target", 2, self.root.settings.graph_color_ex1target)
 
     def SetFanPower(self, value):
         self.fanpowers.pop()
@@ -315,28 +391,38 @@ class Graph(BufferedCanvas):
         self.timer.Start(time)
         if self.window: self.window.graph.StartPlotting(time)
 
+    def Destroy(self):
+        # print(__class__, '.Destroy')
+        self.StopPlotting()
+        return super(BufferedCanvas, self).Destroy()
+
     def StopPlotting(self):
         self.timer.Stop()
-        self.Refresh()
+        #self.Refresh() # do not refresh when stopping in case the underlying object has been destroyed already
         if self.window: self.window.graph.StopPlotting()
 
     def draw(self, dc, w, h):
-        dc.SetBackground(wx.Brush(self.root.bgcolor))
+        dc.SetBackground(wx.Brush(self.root.settings.graph_color_background))
         dc.Clear()
         gc = wx.GraphicsContext.Create(dc)
         self.width = w
         self.height = h
+
+        self.reserved.clear()
         self.drawgrid(dc, gc)
+        self.gridLabelsRight = self.reserved[-1].Right
+
         self.drawbedtargettemp(dc, gc)
         self.drawbedtemp(dc, gc)
         self.drawfanpower(dc, gc)
         self.drawextruder0targettemp(dc, gc)
         self.drawextruder0temp(dc, gc)
-        self.drawextruder1targettemp(dc, gc)
-        self.drawextruder1temp(dc, gc)
+        if self.extruder1targettemps[-1]>0 or self.extruder1temps[-1]>5:
+            self.drawextruder1targettemp(dc, gc)
+            self.drawextruder1temp(dc, gc)
 
-    class _YBounds(object):
-        """Small helper class to claculate y bounds dynamically"""
+    class _YBounds:
+        """Small helper class to calculate y bounds dynamically"""
 
         def __init__(self, graph, minimum_scale=5.0, buffer=0.10):
             """_YBounds(Graph,float,float)
@@ -402,8 +488,8 @@ class Graph(BufferedCanvas):
             if bed_target > 0 or bed_max > 5:  # use HBP
                 miny = min(miny, bed_min, bed_target)
                 maxy = max(maxy, bed_max, bed_target)
-	    miny=min(0,miny);
-	    maxy=max(260,maxy);
+            miny = min(0, miny)
+            maxy = max(260, maxy)
 
             padding = (maxy - miny) * self.buffer / (1.0 - 2 * self.buffer)
             miny -= padding
@@ -436,8 +522,8 @@ class Graph(BufferedCanvas):
             if bed_target > 0 or bed_max > 5:  # use HBP
                 miny = min(miny, bed_min, bed_target)
                 maxy = max(maxy, bed_max, bed_target)
-	    miny=min(0,miny);
-	    maxy=max(260,maxy);
+            miny = min(0, miny)
+            maxy = max(260, maxy)
 
             # We have to rescale, so add padding
             bufratio = self.buffer / (1.0 - self.buffer)
@@ -450,3 +536,7 @@ class Graph(BufferedCanvas):
 
             return (min(miny, self.graph.minyvalue),
                     max(maxy, self.graph.maxyvalue))
+
+class LtRect(wx.Rect):
+    def __lt__(self, other):
+        return self.x < other.x
