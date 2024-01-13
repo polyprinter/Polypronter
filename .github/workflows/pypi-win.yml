@@ -15,7 +15,7 @@ jobs:
       matrix:
         os: [windows-latest]
         architecture: [x64, x86]
-        python-version: ["3.7", "3.8", "3.9", "3.10"]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
 
     steps:
     - name: Checkout
@@ -32,7 +32,7 @@ jobs:
       run: |
         python setup.py bdist_wheel
     - name: Upload artifacts for inspection
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheel_${{ matrix.os }}_${{ matrix.architecture }}_${{ matrix.python-version }}
         path: dist/*.whl
